@@ -1,0 +1,60 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Thêm chút CSS nền cho đỡ chói mắt */
+body {
+  background-color: #f3f4f6; /* Màu xám nhạt */
+}
+
+@media print {
+  /* Ẩn tất cả mọi thứ */
+  body * {
+    visibility: hidden;
+  }
+  
+  /* Chỉ hiện vùng chứa bảng in */
+  #printable-table-area, #printable-table-area * {
+    visibility: visible;
+  }
+
+  /* Căn chỉnh bảng in lên góc trên cùng */
+  #printable-table-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+
+  /* Ẩn các nút thao tác trong bảng khi in (cột cuối cùng) */
+  th:last-child, td:last-child {
+    display: none;
+  }
+
+  @media print {
+  /* Ẩn tất cả giao diện web mặc định */
+  body * {
+    visibility: hidden;
+  }
+  
+  /* Chỉ hiện vùng báo cáo */
+  #report-template, #report-template * {
+    visibility: visible;
+  }
+
+  /* Căn chỉnh báo cáo vào trang giấy */
+  #report-template {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    display: block !important; /* Bắt buộc hiện */
+    background: white;
+  }
+  
+  /* Ẩn các nút bấm nếu lỡ lọt vào */
+  button {
+    display: none !important;
+  }
+}
+}

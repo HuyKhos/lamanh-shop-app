@@ -1,0 +1,34 @@
+Products:
+Method,Endpoint,Mô tả & Logic Backend
+GET,/products,"Lấy danh sách sản phẩm.  - Hỗ trợ phân trang (?page=1&limit=20).  - Quan trọng: Dùng cho màn hình ""Danh sách SP""."
+GET,/products/search,"Tìm kiếm gợi ý (Autocomplete).  - Params: ?q=meiji  - Logic: Tìm trong trường search_name (đã lưu không dấu) và sku.  - Trả về: _id, name, sku, unit, current_stock."
+GET,/products/:id,Lấy chi tiết 1 SP.
+POST,/products,Tạo mới SP.  - Logic: Tự sinh sku nếu không nhập. Tự tạo search_name từ name.
+PUT,/products/:id,Cập nhật SP.
+DELETE,/products/:id,Xóa SP (Chỉ cho xóa nếu chưa phát sinh giao dịch nhập/xuất).
+
+Partners:
+Method,Endpoint,Mô tả & Logic Backend
+GET,/partners,Lấy danh sách.  - Filter: ?type=customer hoặc ?type=supplier.  - Search: ?keyword=chi lan.
+GET,/partners/:id,Xem hồ sơ đối tác.  - Bao gồm cả lịch sử giao dịch gần đây (populate).
+POST,/partners,Thêm đối tác mới.
+PUT,/partners/:id,"Sửa thông tin (SĐT, Địa chỉ...)."
+
+Imports:
+Method,Endpoint,Mô tả & Logic Backend
+GET,/imports,"Lấy danh sách phiếu nhập.  - Tối ưu: Sử dụng .select('-details') trong Mongoose để KHÔNG tải về mảng chi tiết hàng hóa (như yêu cầu của bạn). Chỉ lấy: Mã, Ngày, NCC, Tổng tiền."
+GET,/imports/:id,Lấy chi tiết 1 phiếu.  - Lúc này mới trả về mảng details.
+POST,/imports,"Tạo phiếu nhập mới.  Logic giao dịch (Transaction):  1. Tạo bản ghi ImportReceipt.  2. Loop qua mảng details: Cộng current_stock cho từng SP, cập nhật import_price mới nhất.  3. Tạo bản ghi DebtRecord (Công nợ) tăng khoản phải trả cho NCC."
+
+Exports:
+Method,Endpoint,Mô tả & Logic Backend
+GET,/exports,Lấy danh sách phiếu xuất.  - Tương tự nhập kho: Ẩn details.
+GET,/exports/:id,Lấy chi tiết.
+POST,/exports,Tạo phiếu xuất (Bán hàng).  Logic giao dịch:  1. Tạo ExportReceipt.  2. Trừ current_stock của SP.  3. Cộng điểm gift_points (nếu có).  4. Tạo DebtRecord tăng khoản phải thu khách hàng.
+
+Dashboard:
+Method,Endpoint,Mô tả & Logic Backend
+GET,/reports/dashboard,"Số liệu tổng quan.  - Trả về: Doanh thu ngày, Số đơn hàng mới, Cảnh báo tồn kho thấp, Cảnh báo công nợ quá hạn."
+GET,/reports/inventory,"Báo cáo Tồn kho (Tab Tồn kho).  - Params: ?startDate=...&endDate=...  - Logic:  1. Lấy tất cả SP.  2. Tính tồn đầu/nhập/xuất trong kỳ dựa trên Import/ExportReceipts.  3. Trả về mảng: [{sku, name, dau_ky, nhap, xuat, cuoi_ky}]."
+GET,/debts,Quản lý Công nợ.  - Filter: ?status=unpaid (để xem ai đang nợ).
+POST,/debts/payment,"Thanh toán nợ.  - Body: { debt_id, amount_paid }.  - Logic: Cập nhật paid_amount, remaining_amount, và status của bản ghi công nợ."

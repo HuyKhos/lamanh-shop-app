@@ -1,0 +1,82 @@
+notation crows-foot
+
+// 1. Bảng Đối Tác
+Table Partners {
+  _id ObjectId [pk]
+  name String [required]
+  type enum('customer', 'supplier')
+  phone String [unique]
+  address String
+  saved_points Number [default: 0, note: "Điểm gửi lại"]
+  current_debt Number [default: 0, note: "Công nợ tổng"]
+  is_active Boolean [default: true]
+  createdAt Date
+}
+
+// 2. Bảng Sản Phẩm
+Table Products {
+  _id ObjectId [pk]
+  sku String [unique, note: "Mã hệ thống tự sinh (SP001)"]
+  name String [required, note: "Dùng Text Index để tìm kiếm"]
+  unit String
+  import_price Number [default: 0]
+  export_price Number [default: 0]
+  discount_percent Number [default: 0]
+  gift_points Number [default: 0]
+  current_stock Number [default: 0]
+  createdAt Date
+}
+
+// 3. Nhập Kho
+Table ImportReceipts {
+  _id ObjectId [pk]
+  code String [unique, note: "NK-ddmmyy-xxx"]
+  supplier_id ObjectId [ref: > Partners._id]
+  date Date [default: "now"]
+  total_quantity Number
+  total_amount Number
+  note String
+  // Chi tiết (không load ở list)
+  details Array_Object [note: "[{product_id, name, qty, price}]"]
+  createdAt Date
+}
+
+// 4. Xuất Kho
+Table ExportReceipts {
+  _id ObjectId [pk]
+  code String [unique, note: "XK-ddmmyy-xxx"]
+  customer_id ObjectId [ref: > Partners._id]
+  date Date [default: "now"]
+  payment_due_date Date
+  total_amount Number
+  // Chi tiết (không load ở list)
+  details Array_Object [note: "[{product_id, name, qty, price, discount}]"]
+  createdAt Date
+}
+
+// 5. Công Nợ
+Table DebtRecords {
+  _id ObjectId [pk]
+  partner_id ObjectId [ref: > Partners._id]
+  date Date [default: "now"]
+  reference_code String [note: "Mã phiếu NK/XK liên quan"]
+  reference_id ObjectId [note: "ID phiếu Nhập/Xuất"]
+  
+  amount Number
+  paid_amount Number [default: 0]
+  remaining_amount Number
+  
+  due_date Date
+  status Enum [note: "unpaid, partial, paid, overdue"]
+  note String
+  createdAt Date
+}
+
+// Quan hệ
+Partners._id < ImportReceipts.supplier_id
+Partners._id < ExportReceipts.customer_id
+Partners._id < DebtRecords.partner_id
+
+// Quan hệ mềm
+ImportReceipts._id - DebtRecords.reference_id
+ExportReceipts._id - DebtRecords.reference_id
