@@ -133,14 +133,14 @@ const Dashboard = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <StatCard title="Doanh thu tháng này" value={formatCurrency(data.summary.revenue)} icon={<DollarSign />} color="text-blue-600" bg="bg-blue-100" growth={data.summary.revenueGrowth} growthLabel="so với tháng trước"/>
           <StatCard title="Lợi nhuận tháng này" value={formatCurrency(data.summary.profit)} icon={<TrendingUp />} color="text-green-600" bg="bg-green-100" growth={data.summary.profitGrowth} growthLabel="so với tháng trước"/>
-          <StatCard title="Đơn hàng hôm nay" value={data.summary.orders} icon={<ShoppingBag />} color="text-purple-600" bg="bg-purple-100" />
-          <StatCard title="Giá trị tồn kho" value={formatCurrency(data.summary.stockValue)} icon={<Package />} color="text-orange-600" bg="bg-orange-100" />
+          <StatCard title="Đơn hàng tháng này" value={data.summary.orders} icon={<ShoppingBag />} color="text-purple-600" bg="bg-purple-100" growth={data.summary.ordersGrowth} growthLabel="so với tháng trước"/>
+          <StatCard title="Giá trị tồn kho" value={formatCurrency(data.summary.stockValue)} icon={<Package />} color="text-orange-600" bg="bg-orange-100" growth={data.summary.stockValueGrowth} growthLabel="so với tháng trước"/>
         </div>
 
         {/* Hàng 2: Biểu đồ Doanh thu & GHI CHÚ (ĐÃ ĐỔI CHỖ) */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 bg-white p-5 rounded-xl shadow-sm border">
-            <h3 className="font-bold text-gray-700 mb-4">Xu hướng doanh thu (10 ngày)</h3>
+            <h3 className="font-bold text-gray-700 mb-4">Xu hướng doanh thu</h3>
             <div className="h-64">
               <Line data={lineData} options={{ responsive: true, maintainAspectRatio: false,plugins: {legend: {display: false}}}}/>
             </div>

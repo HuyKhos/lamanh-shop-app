@@ -1,7 +1,8 @@
 import ExportReceipt from '../models/exportModel.js';
 import Product from '../models/productModel.js';
 import Partner from '../models/partnerModel.js';
-import Config from '../models/configModel.js'; // <--- Import model mới
+import Config from '../models/configModel.js';
+import ImportReceipt from '../models/importModel.js';
 
 const getDashboardData = async (req, res) => {
   try {
@@ -42,10 +43,9 @@ const getDashboardData = async (req, res) => {
     }
 
     // ======================================================
-    // PHẦN 2: TÍNH TOÁN LỢI NHUẬN (PROFIT) - (MỚI THÊM)
+    // PHẦN 2: TÍNH TOÁN LỢI NHUẬN (PROFIT)
     // ======================================================
 
-    // Helper: Pipeline tính lợi nhuận (Dùng chung)
     const profitPipeline = (matchStage) => [
       { $match: matchStage },
       { $unwind: "$details" },
@@ -71,15 +71,12 @@ const getDashboardData = async (req, res) => {
       { $group: { _id: null, total: { $sum: "$profit" } } }
     ];
 
-    // 2.1 Lợi nhuận Tháng này
     const profitThisMonthData = await ExportReceipt.aggregate(profitPipeline({ date: { $gte: startOfMonth } }));
     const profitThisMonth = profitThisMonthData[0]?.total || 0;
 
-    // 2.2 Lợi nhuận Tháng trước (MỚI)
     const profitLastMonthData = await ExportReceipt.aggregate(profitPipeline({ date: { $gte: startOfLastMonth, $lte: endOfLastMonth } }));
     const profitLastMonth = profitLastMonthData[0]?.total || 0;
 
-    // 2.3 % Tăng trưởng Lợi nhuận (MỚI)
     let profitGrowth = 0;
     if (profitLastMonth > 0) {
         profitGrowth = ((profitThisMonth - profitLastMonth) / profitLastMonth) * 100;
@@ -88,17 +85,55 @@ const getDashboardData = async (req, res) => {
     }
 
     // ======================================================
-    // PHẦN 3: CÁC CHỈ SỐ KHÁC
+    // PHẦN 3: CÁC CHỈ SỐ KHÁC VÀ TĂNG TRƯỞNG
     // ======================================================
-    const [ordersToday, inventoryData] = await Promise.all([
-      // Số đơn hôm nay
-      ExportReceipt.countDocuments({ date: { $gte: startOfToday } }),
-      // Giá trị tồn kho
+    const [ 
+        ordersThisMonth, 
+        ordersLastMonth, 
+        inventoryData, 
+        importsThisMonthData 
+    ] = await Promise.all([
+      // Số đơn tháng này
+      ExportReceipt.countDocuments({ date: { $gte: startOfMonth } }),
+      // Số đơn tháng trước
+      ExportReceipt.countDocuments({ date: { $gte: startOfLastMonth, $lte: endOfLastMonth } }),
+      // Giá trị tồn kho hiện tại
       Product.aggregate([
         { $project: { value: { $multiply: ["$current_stock", "$import_price"] } } },
         { $group: { _id: null, total: { $sum: "$value" } } }
+      ]),
+      // Tổng giá trị nhập kho tháng này
+      ImportReceipt.aggregate([
+          { $match: { date: { $gte: startOfMonth } } },
+          { $group: { _id: null, total: { $sum: "$total_amount" } } }
       ])
     ]);
+    
+    const stockValueThisMonth = inventoryData[0]?.total || 0;
+
+    // --- Tính toán tăng trưởng Đơn hàng ---
+    let ordersGrowth = 0;
+    if (ordersLastMonth > 0) {
+        ordersGrowth = ((ordersThisMonth - ordersLastMonth) / ordersLastMonth) * 100;
+    } else if (ordersThisMonth > 0) {
+        ordersGrowth = 100;
+    }
+
+    // --- Tính toán tăng trưởng Giá trị kho ---
+    const cogsThisMonth = revenueThisMonth - profitThisMonth;
+    const importsThisMonthValue = importsThisMonthData[0]?.total || 0;
+    const stockValueLastMonth = stockValueThisMonth - importsThisMonthValue + cogsThisMonth;
+
+    let stockValueGrowth = 0;
+    if (stockValueLastMonth > 0) {
+        stockValueGrowth = ((stockValueThisMonth - stockValueLastMonth) / stockValueLastMonth) * 100;
+    } else if (stockValueThisMonth > 0) {
+        stockValueGrowth = 100;
+    }
+
+    // ======================================================
+    // PHẦN 4: DỮ LIỆU BIỂU ĐỒ & DANH SÁCH
+    // ======================================================
 
     // Xu hướng doanh thu 10 ngày
     const tenDaysAgo = new Date();
@@ -150,10 +185,13 @@ const getDashboardData = async (req, res) => {
         revenueGrowth: revenueGrowth.toFixed(1),
         
         profit: profitThisMonth,
-        profitGrowth: profitGrowth.toFixed(1), // <--- Đã thêm trường này
+        profitGrowth: profitGrowth.toFixed(1),
         
-        orders: ordersToday,
-        stockValue: inventoryData[0]?.total || 0
+        orders: ordersThisMonth,
+        ordersGrowth: ordersGrowth.toFixed(1),
+
+        stockValue: stockValueThisMonth,
+        stockValueGrowth: stockValueGrowth.toFixed(1)
       },
       trend: revenueTrend,
       debt: debtReminder.map(d => ({

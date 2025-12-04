@@ -407,6 +407,7 @@ const ImportPage = () => {
       try {
         await axiosClient.delete(`/imports/${id}`);
         toast.success('Đã xóa phiếu nhập');
+        triggerRefresh(['exports', 'products', 'debts', 'dashboard', 'partners']);
         fetchData();
       } catch (error) {
         toast.error('Lỗi xóa: ' + error.message);

@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const axiosClient = axios.create({
-  baseURL: 'http://localhost:5002/api', // Trỏ trực tiếp đến backend đang chạy local
+  baseURL: 'https://lamanh-shop-backend.onrender.com/api', // Đã sửa: Thêm /api vào cuối
   headers: {
     'Content-Type': 'application/json',
   },
