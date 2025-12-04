@@ -12,6 +12,7 @@ import axiosClient from '../api/axiosClient';
 import { toast } from 'react-toastify';
 import * as XLSX from 'xlsx';
 import html2canvas from 'html2canvas'; 
+import Select from 'react-select';
 
 const ExportPage = () => {
   const { isExpanded, setIsExpanded, triggerRefreshDashboard } = useOutletContext();
@@ -79,6 +80,11 @@ const ExportPage = () => {
         toast.info('Đã làm mới form');
     }
   };
+
+  const customerOptions = customers.map(c => ({
+    value: c._id,
+    label: c.name // <--- Chỉ lấy Tên, bỏ SĐT
+  }));
 
   // --- USE EFFECT: LOAD DATA ---
   useEffect(() => {
@@ -262,6 +268,13 @@ const ExportPage = () => {
     reader.readAsBinaryString(file);
   };
 
+  const preventNumberInputScroll = (e) => {
+    // Chặn cuộn chuột: Khi lăn chuột, lập tức bỏ focus khỏi ô input
+    if (e.type === 'wheel') {
+        e.target.blur();
+    }
+  };
+
   const addProductToExport = (product) => { if (product.current_stock <= 0) { return toast.error(`Sản phẩm ${product.name} đã hết hàng!`); } const finalPrice = getPriceForProduct(product); const newItem = { product_id: product._id, product_name_backup: product.name, sku: product.sku, unit: product.unit, quantity: 1, export_price: finalPrice, gift_points: product.gift_points || 0, total: finalPrice }; setNewExport({ ...newExport, details: [...newExport.details, newItem] }); setProductSearch(''); setFilteredProducts([]); setIsSearchFocus(true); setActiveIndex(-1); };
   const updateDetail = (index, field, value) => { const updatedDetails = [...newExport.details]; let val = Number(value); if (field === 'quantity') { const product = products.find(p => p._id === updatedDetails[index].product_id); if (!isViewMode && product && val > product.current_stock) { toast.error(`Quá tồn kho! Tối đa: ${product.current_stock}`); val = product.current_stock; } } updatedDetails[index][field] = val; updatedDetails[index].total = calculateLineTotal(updatedDetails[index].quantity, updatedDetails[index].export_price, updatedDetails[index].discount || 0); setNewExport({ ...newExport, details: updatedDetails }); };
   const removeDetail = (index) => { const updatedDetails = newExport.details.filter((_, i) => i !== index); setNewExport({ ...newExport, details: updatedDetails }); };
@@ -386,10 +399,26 @@ const ExportPage = () => {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1"><User size={16}/> Khách hàng <span className="text-red-500">*</span></label>
-                      <select className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 outline-none bg-white text-gray-800" value={newExport.customer_id} onChange={(e) => handleCustomerChange(e.target.value)} disabled={isViewMode}>
-                        <option value="">-- Chọn khách hàng --</option>
-                        {customers.map(s => (<option key={s._id} value={s._id}>{s.name} {s.is_wholesale ? '(VIP)' : ''}</option>))}
-                      </select>
+                      <Select
+                        options={customerOptions}
+                        value={customerOptions.find(c => c.value === newExport.customer_id) || null}
+                        onChange={(selected) => handleCustomerChange(selected ? selected.value : '')}
+                        isDisabled={isViewMode}
+                        placeholder="-- Nhập tên --"
+                        isClearable
+                        isSearchable
+                        noOptionsMessage={() => "Không tìm thấy tên này"}
+                        styles={{
+                          control: (base) => ({
+                            ...base,
+                            borderRadius: '0.5rem',
+                            borderColor: '#d1d5db',
+                            minHeight: '42px',
+                            fontSize: '14px'
+                          }),
+                          menu: (base) => ({ ...base, zIndex: 9999 })
+                        }}
+                      />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Hạn thanh toán</label>
@@ -460,9 +489,9 @@ const ExportPage = () => {
                           <td className="p-3 text-center text-gray-500">{index + 1}</td>
                           <td className="p-3 font-medium text-gray-800">{item.product_name_backup}<div className="text-xs text-gray-400 font-mono mt-0.5">{item.sku}</div></td>
                           <td className="p-3 text-gray-600">{item.unit}</td>
-                          <td className="p-3 text-right"><input id={`quantity-${index}`} onKeyDown={handleQuantityKeyDown} type="number" min="1" className="w-16 border border-gray-300 rounded p-1.5 text-right focus:ring-1 focus:ring-blue-500 outline-none font-bold text-gray-800" value={item.quantity} onChange={(e) => updateDetail(index, 'quantity', e.target.value)} disabled={isViewMode} /></td>
-                          <td className="p-3 text-right"><input type="number" className="w-16 border border-gray-300 rounded p-1.5 text-center font-bold focus:ring-1 focus:ring-blue-500 outline-none" value={item.gift_points !== undefined ? item.gift_points : 0} onChange={(e) => updateDetail(index, 'gift_points', e.target.value)} disabled={isViewMode} /></td>
-                          <td className="p-3 text-right"><input type="number" className="w-28 border border-gray-300 rounded p-1.5 text-right focus:ring-1 focus:ring-blue-500 outline-none" value={item.export_price} onChange={(e) => updateDetail(index, 'export_price', e.target.value)} disabled={isViewMode} /></td>
+                          <td className="p-3 text-right"><input id={`quantity-${index}`} onKeyDown={handleQuantityKeyDown} type="number" min="1" className="w-16 border border-gray-300 rounded p-1.5 text-right focus:ring-1 focus:ring-blue-500 outline-none font-bold text-gray-800" value={item.quantity} onChange={(e) => updateDetail(index, 'quantity', e.target.value)} onWheel={preventNumberInputScroll} disabled={isViewMode} /></td>
+                          <td className="p-3 text-right"><input type="number" className="w-16 border border-gray-300 rounded p-1.5 text-center font-bold focus:ring-1 focus:ring-blue-500 outline-none" value={item.gift_points !== undefined ? item.gift_points : 0} onChange={(e) => updateDetail(index, 'gift_points', e.target.value)} onWheel={preventNumberInputScroll} disabled={isViewMode} /></td>
+                          <td className="p-3 text-right"><input type="number" className="w-28 border border-gray-300 rounded p-1.5 text-right focus:ring-1 focus:ring-blue-500 outline-none" value={item.export_price} onChange={(e) => updateDetail(index, 'export_price', e.target.value)} onWheel={preventNumberInputScroll} disabled={isViewMode} /></td>
                           <td className="p-3 text-right font-bold text-blue-600">{item.total.toLocaleString()}₫</td>
                           <td className="p-3 text-center">{!isViewMode && <button onClick={() => removeDetail(index)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"><Trash2 size={18} /></button>}</td>
                         </tr>

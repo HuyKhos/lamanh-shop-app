@@ -9,6 +9,7 @@ import {
 import axiosClient from '../api/axiosClient';
 import { toast } from 'react-toastify';
 import * as XLSX from 'xlsx';
+import Select from 'react-select';
 
 const ImportPage = () => {
   const { isExpanded, setIsExpanded } = useOutletContext();
@@ -21,6 +22,7 @@ const ImportPage = () => {
   // --- STATE ANIMATION ĐÓNG ---
   const [isClosing, setIsClosing] = useState(false);
 
+  const [partners, setPartners] = useState([]);
   const [suppliers, setSuppliers] = useState([]); 
   const [products, setProducts] = useState([]);   
   const [imports, setImports] = useState(globalCache.imports || []); 
@@ -95,6 +97,12 @@ const ImportPage = () => {
       setLoading(false);
     }
   };
+
+  const supplierOptions = suppliers
+    .map(s => ({
+        value: s._id,
+        label: s.name // <--- Chỉ lấy Tên
+    }));
 
   useEffect(() => {
     fetchData();
@@ -278,6 +286,14 @@ const ImportPage = () => {
     setFilteredProducts([]);
     setIsSearchFocus(true); 
     setActiveIndex(-1);
+  };
+  
+  // --- HÀM CHẶN CUỘN CHUỘT VÀ MŨI TÊN ---
+  const preventNumberInputScroll = (e) => {
+    // Chặn cuộn chuột: Khi lăn chuột, lập tức bỏ focus khỏi ô input
+    if (e.type === 'wheel') {
+        e.target.blur();
+    }
   };
 
   const updateDetail = (index, field, value) => {
@@ -636,10 +652,26 @@ const ImportPage = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1"><User size={16} /> Nhà cung cấp <span className="text-red-500">*</span></label>
-                  <select className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 outline-none bg-white text-gray-800" value={newImport.supplier_id} onChange={(e) => setNewImport({...newImport, supplier_id: e.target.value})} disabled={isViewMode}>
-                    <option value="">-- Chọn nhà cung cấp --</option>
-                    {suppliers.map(s => (<option key={s._id} value={s._id}>{s.name}</option>))}
-                  </select>
+                  <Select
+                    options={supplierOptions}
+                    value={supplierOptions.find(s => s.value === newImport.supplier_id) || null}
+                    onChange={(selected) => setNewImport({...newImport, supplier_id: selected ? selected.value : ''})}
+                    isDisabled={isViewMode} // Hoặc biến kiểm tra chế độ xem của bạn
+                    placeholder="-- Nhập tên --"
+                    isClearable
+                    isSearchable
+                    noOptionsMessage={() => "Không tìm thấy"}
+                    styles={{
+                      control: (base) => ({
+                        ...base,
+                        borderRadius: '0.5rem',
+                        borderColor: '#d1d5db',
+                        minHeight: '42px',
+                        fontSize: '14px'
+                      }),
+                      menu: (base) => ({ ...base, zIndex: 9999 })
+                    }}
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1"><FileText size={16} /> Ghi chú</label>
@@ -736,10 +768,10 @@ const ImportPage = () => {
                             <input 
                                id={`quantity-${index}`} 
                                onKeyDown={handleQuantityKeyDown} 
-                               type="number" min="1" className="w-20 border border-gray-300 rounded p-1.5 text-right focus:ring-1 focus:ring-blue-500 outline-none font-bold text-gray-800" value={item.quantity} onChange={(e) => updateDetail(index, 'quantity', e.target.value)} disabled={isViewMode} />
+                               type="number" min="1" className="w-20 border border-gray-300 rounded p-1.5 text-right focus:ring-1 focus:ring-blue-500 outline-none font-bold text-gray-800" value={item.quantity} onChange={(e) => updateDetail(index, 'quantity', e.target.value)} onWheel={preventNumberInputScroll} disabled={isViewMode} />
                           </td>
                           <td className="p-3 text-right">
-                            <input type="number" className="w-32 border border-gray-300 rounded p-1.5 text-right focus:ring-1 focus:ring-blue-500 outline-none" value={item.import_price} onChange={(e) => updateDetail(index, 'import_price', e.target.value)} disabled={isViewMode} />
+                            <input type="number" className="w-32 border border-gray-300 rounded p-1.5 text-right focus:ring-1 focus:ring-blue-500 outline-none" value={item.import_price} onChange={(e) => updateDetail(index, 'import_price', e.target.value)} onWheel={preventNumberInputScroll} disabled={isViewMode}/>
                           </td>
                           <td className="p-3 text-right font-bold text-blue-600">{item.total.toLocaleString()}₫</td>
                           <td className="p-3 text-center">
