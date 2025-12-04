@@ -30,7 +30,7 @@ app.get('/', (req, res) => {
   res.send('API Backend của Lâm Anh Shop đang chạy ngon lành!');
 });
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 app.listen(PORT, () => {
   console.log(`Server đang chạy ở chế độ ${process.env.NODE_ENV} trên cổng ${PORT}`);
 });
