@@ -76,7 +76,7 @@ const PartnerPage = () => {
     let result = [...partners];
     if (searchTerm) {
       const lowerTerm = searchTerm.toLowerCase();
-      result = result.filter(p => p.name.toLowerCase().includes(lowerTerm) || p.phone.includes(lowerTerm));
+      result = result.filter(p => (p.name || '').toLowerCase().includes(lowerTerm) || (p.phone || '').includes(lowerTerm) || (p.address || '').includes(lowerTerm));
     }
     if (filterType !== 'all') result = result.filter(p => p.type === filterType);
     if (sortConfig.key) {

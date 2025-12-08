@@ -297,14 +297,14 @@ const ProductPage = () => {
             {/* Search */}
             <div className="relative flex-1 md:w-64">
               <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-              <input type="text" className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" placeholder="Tìm tên hoặc mã SP..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+              <input type="text" className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm" placeholder="Tìm tên hoặc mã SP..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
               {searchTerm && (<button onClick={() => setSearchTerm('')} className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={14} /></button>)}
             </div>
 
             {/* Filter */}
             <div className="relative">
               <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 pointer-events-none"><Filter size={16} /></div>
-              <select className="pl-9 pr-8 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm appearance-none bg-white cursor-pointer hover:bg-gray-50" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+              <select className="pl-9 pr-8 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm appearance-none bg-white cursor-pointer hover:bg-gray-50" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
                 <option value="all">Tất cả kho</option>
                 <option value="in_stock">✅ Còn hàng</option>
                 <option value="out_of_stock">⛔ Hết hàng</option>
@@ -385,7 +385,7 @@ const ProductPage = () => {
               <div className="flex items-center gap-2">
                 {/* Nút chọn số lượng mỗi trang */}
                 <select 
-                  className="border border-gray-300 rounded-md text-sm px-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none"
+                  className="border border-gray-300 rounded-md text-sm px-2 py-1 focus:ring-1 focus:ring-blue-500 outline-none"
                   value={itemsPerPage}
                   onChange={(e) => {
                     setItemsPerPage(Number(e.target.value));

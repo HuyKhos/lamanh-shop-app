@@ -4,7 +4,7 @@ import {
   ArrowDownToLine, Plus, Search, X, User, FileText, 
   Trash2, Save, Menu, Barcode, Package, DollarSign,
   ArrowUpDown, ArrowUp, ArrowDown, Filter, FileSpreadsheet, Pencil, Eye, Loader2,
-  ChevronLeft, ChevronRight, Upload, Download // <--- Thêm Upload, Download
+  ChevronLeft, ChevronRight, Upload, Download, RefreshCw // <--- Thêm Upload, Download
 } from 'lucide-react';
 import axiosClient from '../api/axiosClient';
 import { toast } from 'react-toastify';
@@ -14,6 +14,13 @@ import Select from 'react-select';
 const ImportPage = () => {
   const { isExpanded, setIsExpanded } = useOutletContext();
   const { globalCache, refreshFlags, updateCache, triggerRefresh } = useOutletContext();
+
+  const INITIAL_IMPORT_STATE = {
+    code: '', 
+    supplier_id: '',
+    note: '',
+    details: [] 
+  };
 
   const [showModal, setShowModal] = useState(false);
   const [isViewMode, setIsViewMode] = useState(false); 
@@ -134,30 +141,66 @@ const ImportPage = () => {
     }
   }, [newImport.details.length]);
 
+  // 1. Tự động LƯU nháp vào globalCache khi có thay đổi
   useEffect(() => {
     if (showModal && !isViewMode) {
-      setNewImport({
-        code: 'Đang tải mã...',
-        supplier_id: '',
-        note: '',
-        details: []
-      });
-      setProductSearch('');
-      setFilteredProducts([]);
-      setActiveIndex(-1);
-      setIsSubmitting(false);
+      // Lưu toàn bộ state newImport vào cache với key 'importDraft'
+      updateCache('importDraft', newImport);
+    }
+  }, [newImport, showModal, isViewMode]);
 
-      const fetchNewCode = async () => {
-        try {
-          const res = await axiosClient.get('/imports/new-code');
-          setNewImport(prev => ({ ...prev, code: res.code }));
-        } catch (error) {
-          console.error("Lỗi lấy mã:", error);
+  // 2. KHÔI PHỤC nháp khi mở Modal
+  useEffect(() => {
+    if (showModal && !isViewMode) {
+      const draft = globalCache.importDraft;
+
+      // Kiểm tra xem có bản nháp "có dữ liệu" không (có NCC hoặc có sản phẩm)
+      if (draft && (draft.supplier_id || draft.details.length > 0)) {
+        setNewImport(draft);
+        setProductSearch('');
+        setFilteredProducts([]);
+        setIsSubmitting(false);
+        toast.info('Đã khôi phục phiếu nhập đang soạn dở', { autoClose: 1000 });
+      } else {
+        // Nếu không có nháp, kiểm tra xem hiện tại form có dữ liệu chưa
+        // Nếu chưa có gì (mới mở) thì reset và lấy mã mới
+        const isDraftCurrent = newImport.supplier_id || newImport.details.length > 0;
+        if (!isDraftCurrent) {
+            setNewImport({ ...INITIAL_IMPORT_STATE, code: 'Đang tải mã...' });
+            setProductSearch('');
+            setFilteredProducts([]);
+            setIsSubmitting(false);
+            
+            // Gọi API lấy mã mới
+            const fetchNewCode = async () => {
+                try {
+                  const res = await axiosClient.get('/imports/new-code');
+                  setNewImport(prev => ({ ...prev, code: res.code }));
+                } catch (error) { console.error(error); }
+            };
+            fetchNewCode();
         }
-      };
-      fetchNewCode();
+      }
     }
   }, [showModal, isViewMode]);
+
+  // Hàm Reset thủ công (khi người dùng muốn xóa nháp để nhập mới)
+  const handleResetForm = () => {
+    if (window.confirm('Xóa hết dữ liệu đang nhập để tạo phiếu mới?')) {
+        setNewImport(INITIAL_IMPORT_STATE);
+        updateCache('importDraft', null); // Xóa cache
+        
+        // Lấy lại mã mới
+        const fetchNewCode = async () => {
+            try {
+              const res = await axiosClient.get('/imports/new-code');
+              setNewImport(prev => ({ ...prev, code: res.code }));
+            } catch (error) { console.error(error); }
+        };
+        fetchNewCode();
+        toast.info('Đã làm mới form');
+    }
+  };
 
   // --- XỬ LÝ DỮ LIỆU & PHÂN TRANG ---
   const getProcessedImports = () => {
@@ -241,24 +284,39 @@ const ImportPage = () => {
     else setActiveIndex(-1);
   }, [productSearch, products, isSearchFocus]);
 
-  const handleKeyDown = (e) => {
-    if (filteredProducts.length === 0) return;
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setActiveIndex(prev => (prev < filteredProducts.length - 1 ? prev + 1 : prev));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setActiveIndex(prev => (prev > 0 ? prev - 1 : 0));
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      if (activeIndex >= 0 && filteredProducts[activeIndex]) {
-        addProductToImport(filteredProducts[activeIndex]);
-      }
-    } else if (e.key === 'Escape') {
-      setIsSearchFocus(false);
-    }
-  };
+// --- Sửa hàm handleKeyDown trong ExportPage.jsx ---
+const handleKeyDown = (e) => {
+  if (filteredProducts.length === 0) return;
 
+  // Xử lý nút Mũi tên xuống HOẶC nút Tab
+  if (e.key === 'ArrowDown' || e.key === 'Tab') {
+    e.preventDefault(); 
+    // Di chuyển xuống dưới, nếu đang ở cuối thì giữ nguyên
+    setActiveIndex(prev => (prev < filteredProducts.length - 1 ? prev + 1 : prev));
+  } 
+  // Xử lý nút Mũi tên lên
+  else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    // Di chuyển lên trên, nếu đang ở đầu (0) thì giữ nguyên
+    setActiveIndex(prev => (prev > 0 ? prev - 1 : 0));
+  } 
+  // Xử lý nút Enter
+  else if (e.key === 'Enter') {
+    e.preventDefault();
+    // Nếu activeIndex hợp lệ thì chọn sản phẩm đó
+    if (activeIndex >= 0 && filteredProducts[activeIndex]) {
+      addProductToExport(filteredProducts[activeIndex]);
+    } 
+    // Fallback: Nếu vì lý do nào đó chưa chọn (ví dụ -1) nhưng có danh sách, chọn cái đầu tiên
+    else if (filteredProducts.length > 0) {
+      addProductToExport(filteredProducts[0]);
+    }
+  } 
+  // Xử lý nút ESC
+  else if (e.key === 'Escape') {
+    setIsSearchFocus(false);
+  }
+  };
   const handleQuantityKeyDown = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -298,9 +356,37 @@ const ImportPage = () => {
 
   const updateDetail = (index, field, value) => {
     const updatedDetails = [...newImport.details];
-    updatedDetails[index][field] = Number(value);
-    updatedDetails[index].total = updatedDetails[index].quantity * updatedDetails[index].import_price;
+    
+    // 1. Cho phép gán giá trị rỗng '' vào state để hiển thị trên UI
+    const val = value === '' ? '' : Number(value);
+    updatedDetails[index][field] = val;
+
+    // 2. Tính toán Thành tiền (item.total) ngay lập tức
+    // QUAN TRỌNG: Dù val là '', ta ép kiểu về 0 để tính toán.
+    // Như vậy item.total LUÔN LÀ SỐ, hàm calculateTotalAmount bên dưới KHÔNG CẦN SỬA.
+    const qty = field === 'quantity' ? (val === '' ? 0 : val) : (updatedDetails[index].quantity === '' ? 0 : updatedDetails[index].quantity);
+    const price = field === 'import_price' ? (val === '' ? 0 : val) : (updatedDetails[index].import_price === '' ? 0 : updatedDetails[index].import_price);
+    
+    updatedDetails[index].total = qty * price;
+    
     setNewImport({ ...newImport, details: updatedDetails });
+  };
+
+  const handleBlur = (index, field) => {
+    const detailItem = newImport.details[index];
+    
+    // Nếu giá trị đang là chuỗi rỗng '', thì reset về 0
+    if (detailItem[field] === '') {
+        const updatedDetails = [...newImport.details];
+        updatedDetails[index][field] = 0;
+        
+        // Tính lại total cho chắc chắn (dù ở step 1 đã tính rồi, nhưng set lại cho clean)
+        const qty = updatedDetails[index].quantity;
+        const price = updatedDetails[index].import_price;
+        updatedDetails[index].total = qty * price;
+
+        setNewImport({ ...newImport, details: updatedDetails });
+    }
   };
 
   const removeDetail = (index) => {
@@ -406,8 +492,10 @@ const ImportPage = () => {
         total_quantity: calculateTotalQuantity()
       };
       await axiosClient.post('/imports', payload);
+      updateCache('importDraft', null);
       toast.success('Nhập kho thành công! 🎉');
       triggerRefresh(['exports', 'products', 'debts', 'dashboard', 'partners']);
+      setNewImport(INITIAL_IMPORT_STATE);
       handleCloseModal();
       fetchData(); 
     } catch (error) {
@@ -494,7 +582,7 @@ const ImportPage = () => {
             <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
             <input 
               type="text" 
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm"
               placeholder="Tìm mã phiếu, NCC, tên hàng..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -573,7 +661,7 @@ const ImportPage = () => {
               
               <div className="flex items-center gap-2">
                 <select 
-                  className="border border-gray-300 rounded-md text-sm px-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none"
+                  className="border border-gray-300 rounded-md text-sm px-2 py-1 focus:ring-1 focus:ring-blue-500 outline-none"
                   value={itemsPerPage}
                   onChange={(e) => {
                     setItemsPerPage(Number(e.target.value));
@@ -639,9 +727,23 @@ const ImportPage = () => {
             }}
           >
             <div className="flex justify-between items-center p-5 border-b">
-              <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                {isViewMode ? <><Eye size={24} className="text-blue-600" /> Chi tiết phiếu nhập</> : <><Plus size={24} className="text-blue-600" /> Tạo phiếu nhập kho mới</>}
-              </h2>
+              <div className="flex items-center gap-4">
+                  <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                    {isViewMode ? <><Eye size={24} className="text-blue-600" /> Chi tiết phiếu nhập</> : <><Plus size={24} className="text-blue-600" /> Tạo phiếu nhập kho</>}
+                  </h2>
+                  
+                  {/* Nút Làm Mới - Chỉ hiện khi đang tạo mới */}
+                  {!isViewMode && (
+                    <button 
+                        type="button" 
+                        onClick={handleResetForm} 
+                        className="flex items-center gap-1 text-sm bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-full transition-colors border border-gray-200 whitespace-nowrap" 
+                        title="Xóa trắng form để nhập mới"
+                    >
+                        <RefreshCw size={14} /> Làm mới
+                    </button>
+                  )}
+              </div>
               <button onClick={handleCloseModal} className="text-gray-400 hover:text-red-500 transition-colors"><X size={24} /></button>
             </div>
             <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
@@ -704,7 +806,7 @@ const ImportPage = () => {
                     <input 
                         ref={searchInputRef}
                         type="text" 
-                        className="w-full border border-blue-300 rounded-lg p-3 shadow-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all" 
+                        className="w-full border border-blue-300 rounded-lg p-3 shadow-sm focus:ring-1 focus:ring-blue-500 outline-none transition-all" 
                         placeholder="Gõ tên hoặc mã sản phẩm để tìm..." 
                         value={productSearch} 
                         onChange={(e) => setProductSearch(e.target.value)} 
@@ -768,10 +870,10 @@ const ImportPage = () => {
                             <input 
                                id={`quantity-${index}`} 
                                onKeyDown={handleQuantityKeyDown} 
-                               type="number" min="1" className="w-20 border border-gray-300 rounded p-1.5 text-right focus:ring-1 focus:ring-blue-500 outline-none font-bold text-gray-800" value={item.quantity} onChange={(e) => updateDetail(index, 'quantity', e.target.value)} onWheel={preventNumberInputScroll} disabled={isViewMode} />
+                               type="number" min="0" className="w-20 border border-gray-300 rounded p-1.5 text-right focus:ring-1 focus:ring-blue-500 outline-none font-bold text-gray-800" value={item.quantity} onChange={(e) => updateDetail(index, 'quantity', e.target.value)} onBlur={() => handleBlur(index, 'quantity')} onWheel={preventNumberInputScroll} disabled={isViewMode} />
                           </td>
                           <td className="p-3 text-right">
-                            <input type="number" className="w-32 border border-gray-300 rounded p-1.5 text-right focus:ring-1 focus:ring-blue-500 outline-none" value={item.import_price} onChange={(e) => updateDetail(index, 'import_price', e.target.value)} onWheel={preventNumberInputScroll} disabled={isViewMode}/>
+                            <input type="number" className="w-32 border border-gray-300 rounded p-1.5 text-right focus:ring-1 focus:ring-blue-500 outline-none" value={item.import_price} onChange={(e) => updateDetail(index, 'import_price', e.target.value)} onBlur={() => handleBlur(index, 'import_price')} onWheel={preventNumberInputScroll} disabled={isViewMode}/>
                           </td>
                           <td className="p-3 text-right font-bold text-blue-600">{item.total.toLocaleString()}₫</td>
                           <td className="p-3 text-center">

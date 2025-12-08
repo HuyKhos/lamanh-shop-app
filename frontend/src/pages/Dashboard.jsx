@@ -133,7 +133,7 @@ const Dashboard = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <StatCard title="Doanh thu tháng này" value={formatCurrency(data.summary.revenue)} icon={<DollarSign />} color="text-blue-600" bg="bg-blue-100" growth={data.summary.revenueGrowth} growthLabel="so với tháng trước"/>
           <StatCard title="Lợi nhuận tháng này" value={formatCurrency(data.summary.profit)} icon={<TrendingUp />} color="text-green-600" bg="bg-green-100" growth={data.summary.profitGrowth} growthLabel="so với tháng trước"/>
-          <StatCard title="Đơn hàng tháng này" value={data.summary.orders} icon={<ShoppingBag />} color="text-purple-600" bg="bg-purple-100" growth={data.summary.ordersGrowth} growthLabel="so với tháng trước"/>
+          <StatCard title="Đơn hàng tháng này" value={data.summary.orders} icon={<ShoppingBag />} color="text-purple-600" bg="bg-purple-100" customSubText={`Tháng trước: ${data.summary.ordersLastMonth} đơn`} />
           <StatCard title="Giá trị tồn kho" value={formatCurrency(data.summary.stockValue)} icon={<Package />} color="text-orange-600" bg="bg-orange-100" growth={data.summary.stockValueGrowth} growthLabel="so với tháng trước"/>
         </div>
 
@@ -206,7 +206,7 @@ const Dashboard = () => {
   );
 };
 
-const StatCard = ({ title, value, icon, color, bg, growth, growthLabel }) => {
+const StatCard = ({ title, value, icon, color, bg, growth, growthLabel, customSubText }) => {
   const isPositive = parseFloat(growth) >= 0;
   const growthColor = isPositive ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50';
   const growthIcon = isPositive ? '↑' : '↓';
@@ -220,7 +220,13 @@ const StatCard = ({ title, value, icon, color, bg, growth, growthLabel }) => {
                 <p className="text-xl font-bold text-gray-800">{value}</p>
             </div>
         </div>
-        {growth !== undefined && (
+        
+        {/* LOGIC MỚI: Ưu tiên hiển thị customSubText nếu có */}
+        {customSubText ? (
+            <div className="mt-2 px-2 py-1 rounded text-xs font-medium inline-flex items-center gap-1 w-fit text-gray-600 bg-gray-100">
+                {customSubText}
+            </div>
+        ) : growth !== undefined && (
             <div className={`mt-2 px-2 py-1 rounded text-xs font-medium inline-flex items-center gap-1 w-fit ${growthColor}`}>
                 <span>{growthIcon} {Math.abs(growth)}%</span>
                 <span className="text-gray-500 font-normal ml-1">{growthLabel}</span>
