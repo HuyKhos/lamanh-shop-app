@@ -188,6 +188,7 @@ const getDashboardData = async (req, res) => {
         profitGrowth: profitGrowth.toFixed(1),
         
         orders: ordersThisMonth,
+        ordersLastMonth: ordersLastMonth,
         ordersGrowth: ordersGrowth.toFixed(1),
 
         stockValue: stockValueThisMonth,
