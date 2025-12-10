@@ -4,21 +4,18 @@ import DebtRecord from '../models/debtModel.js';
 import Partner from '../models/partnerModel.js';
 import Counter from '../models/counterModel.js';
 
-// Sinh mã phiếu Xuất: XK-251128-001
+// --- 1. HÀM SINH MÃ TỰ ĐỘNG (GIỮ NGUYÊN) ---
 export const generateExportCode = async () => {
-  // 1. Lấy ngày giờ hiện tại theo múi giờ Việt Nam
   const now = new Date();
   const dateInVietnam = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
   
-  // 2. Tạo chuỗi YYMMDD (Ví dụ: 251129)
   const year = dateInVietnam.getFullYear().toString().slice(-2);
   const month = String(dateInVietnam.getMonth() + 1).padStart(2, '0');
   const day = String(dateInVietnam.getDate()).padStart(2, '0');
-  const dateStr = `${year}${month}${day}`; // 251129
+  const dateStr = `${year}${month}${day}`; 
   
-  const counterId = `export_${dateStr}`; // ID: export_251129
+  const counterId = `export_${dateStr}`;
 
-  // 3. Tìm và update (Tự tạo mới nếu chưa có nhờ upsert: true)
   const counter = await Counter.findByIdAndUpdate(
     counterId,
     { $inc: { seq: 1 } },
@@ -26,32 +23,28 @@ export const generateExportCode = async () => {
   );
 
   const sequence = counter ? counter.seq : 1;
-  // Mã phiếu: XK-251129-001
   return `XK-${dateStr}-${String(sequence).padStart(3, '0')}`;
 };
 
-// API lấy mã mới cho Frontend (Preview)
+// --- 2. API LẤY MÃ MỚI CHO FRONTEND (GIỮ NGUYÊN) ---
 const getNewExportCode = async (req, res) => {
   try {
-    // 1. Lấy ngày giờ chuẩn Việt Nam
     const now = new Date();
     const dateInVietnam = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
     
     const year = dateInVietnam.getFullYear().toString().slice(-2);
     const month = String(dateInVietnam.getMonth() + 1).padStart(2, '0');
     const day = String(dateInVietnam.getDate()).padStart(2, '0');
-    const dateStr = `${year}${month}${day}`; // Ví dụ: 251129
+    const dateStr = `${year}${month}${day}`;
     
     const counterId = `export_${dateStr}`;
     
-    // 2. Tìm counter hiện tại (Chỉ khởi tạo nếu chưa có, KHÔNG TĂNG SỐ)
     const counter = await Counter.findByIdAndUpdate(
       counterId,
-      { $setOnInsert: { seq: 0 } }, // Nếu chưa có thì set seq = 0
-      { new: true, upsert: true }   // Trả về document
+      { $setOnInsert: { seq: 0 } },
+      { new: true, upsert: true }
     );
     
-    // 3. Dự đoán mã tiếp theo (Seq hiện tại + 1)
     const nextSeq = counter.seq + 1;
     const newCode = `XK-${dateStr}-${String(nextSeq).padStart(3, '0')}`;
     
@@ -61,20 +54,17 @@ const getNewExportCode = async (req, res) => {
   }
 };
 
-// @desc    Tạo phiếu xuất
-// @desc    Tạo phiếu xuất (Bán hàng & Đổi quà)
+// --- 3. TẠO PHIẾU XUẤT (GIỮ NGUYÊN) ---
 const createExport = async (req, res) => {
   try {
-    // Bỏ trường added_points nhập tay, thay bằng logic tự động
     const { customer_id, details, total_amount, note, payment_due_date} = req.body;
 
     if (!details || details.length === 0) return res.status(400).json({ message: 'Giỏ hàng rỗng' });
 
-    // 1. Tính tổng điểm phát sinh trong phiếu này
-    // (Mua hàng thì dương, Đổi quà thì âm)
+    // Tính tổng điểm phát sinh
     let totalPointsChange = 0;
     
-    // 2. Kiểm tra tồn kho và Tính điểm
+    // Kiểm tra tồn kho và Tính điểm
     for (const item of details) {
       const product = await Product.findById(item.product_id);
       if (!product) return res.status(404).json({ message: 'Sản phẩm không tồn tại' });
@@ -83,16 +73,13 @@ const createExport = async (req, res) => {
         return res.status(400).json({ message: `Sản phẩm ${product.name} không đủ hàng (Tồn: ${product.current_stock})` });
       }
       
-      // Cộng dồn điểm: (Điểm SP * Số lượng)
-      // Lưu ý: item.gift_points có thể là số âm nếu nhân viên nhập tay để đổi quà
       totalPointsChange += (item.gift_points || 0) * item.quantity;
     }
 
-    // 3. Kiểm tra điểm khách hàng (Nếu đổi quà quá tay)
+    // Kiểm tra khách hàng
     const customer = await Partner.findById(customer_id);
     if (!customer) return res.status(404).json({ message: 'Khách hàng không tồn tại' });
 
-    // Điểm dự kiến sau khi xong đơn
     const newCustomerPoints = (customer.saved_points || 0) + totalPointsChange;
 
     if (newCustomerPoints < 0) {
@@ -101,7 +88,7 @@ const createExport = async (req, res) => {
       });
     }
 
-    // 4. Sinh mã và Lưu phiếu
+    // Lưu phiếu
     const code = await generateExportCode();
     const exportReceipt = new ExportReceipt({
       code, 
@@ -110,12 +97,11 @@ const createExport = async (req, res) => {
       note,
       details,
       payment_due_date,
-      // LƯU LẠI ĐIỂM CUỐI CÙNG CỦA KHÁCH VÀO ĐÂY
       partner_points_snapshot: newCustomerPoints 
     });
     const savedExport = await exportReceipt.save();
 
-    // 5. Trừ kho
+    // Trừ kho
     for (const item of details) {
       const product = await Product.findById(item.product_id);
       if (product) {
@@ -124,33 +110,33 @@ const createExport = async (req, res) => {
       }
     }
 
-    // 6. Ghi nợ & Cập nhật điểm khách hàng
+    // Ghi nợ
     const debt = new DebtRecord({
       partner_id: customer_id,
       reference_code: code,
       amount: total_amount,
-      dueDate: payment_due_date,
       remaining_amount: total_amount,
+      dueDate: payment_due_date,
     });
     await debt.save();
 
-    // Cập nhật tiền nợ VÀ điểm tích lũy mới
+    // Cập nhật Nợ và Điểm cho khách
     customer.current_debt = customer.current_debt + total_amount;
-    customer.saved_points = newCustomerPoints; // Lưu điểm mới
+    customer.saved_points = newCustomerPoints;
     await customer.save();
 
-    res.status(201).json({ receipt: savedExport, message: 'Xuất kho & Cập nhật điểm thành công!' });
+    res.status(201).json({ receipt: savedExport, message: 'Xuất kho thành công!' });
 
   } catch (error) {
     res.status(500).json({ message: 'Lỗi: ' + error.message });
   }
 };
 
-// @desc    Lấy danh sách phiếu xuất
+// --- 4. LẤY DANH SÁCH (GIỮ NGUYÊN) ---
 const getExports = async (req, res) => {
   try {
     const exports = await ExportReceipt.find({})
-      .populate('customer_id', 'name phone address')
+      .populate('customer_id', 'name phone address saved_points') // Populate thêm saved_points để frontend dùng nếu cần
       .sort({ createdAt: -1 });
     res.json(exports);
   } catch (error) {
@@ -158,7 +144,7 @@ const getExports = async (req, res) => {
   }
 };
 
-// @desc    Cập nhật thông tin phiếu (Chỉ cho sửa Ghi chú & Cấu hình in)
+// --- 5. CẬP NHẬT GHI CHÚ (GIỮ NGUYÊN) ---
 const updateExport = async (req, res) => {
   try {
     const { note, hide_price } = req.body;
@@ -178,13 +164,13 @@ const updateExport = async (req, res) => {
   }
 };
 
-// @desc    Xóa phiếu xuất (Hoàn lại kho, Trừ nợ khách)
+// --- 6. XÓA PHIẾU (ĐÃ CẬP NHẬT LOGIC HOÀN ĐIỂM) ---
 const deleteExport = async (req, res) => {
   try {
     const receipt = await ExportReceipt.findById(req.params.id);
     if (!receipt) return res.status(404).json({ message: 'Không tìm thấy phiếu' });
 
-    // Hoàn lại kho (Cộng lại)
+    // A. Hoàn lại kho (Cộng lại số lượng)
     for (const item of receipt.details) {
       const product = await Product.findById(item.product_id);
       if (product) {
@@ -193,17 +179,31 @@ const deleteExport = async (req, res) => {
       }
     }
 
-    // Trừ nợ khách
+    // B. Xử lý Khách hàng (Trừ nợ & Hoàn điểm)
     const customer = await Partner.findById(receipt.customer_id);
     if (customer) {
+      // 1. Trừ nợ
       customer.current_debt = customer.current_debt - receipt.total_amount;
+
+      // 2. Hoàn điểm (Logic mới thêm vào)
+      // Tính tổng điểm của phiếu này
+      let pointsToRevert = 0;
+      for (const item of receipt.details) {
+          pointsToRevert += (item.gift_points || 0) * item.quantity;
+      }
+      
+      // Lúc tạo phiếu ta CỘNG điểm, thì giờ xóa phiếu ta phải TRỪ điểm
+      // (Nếu là phiếu đổi quà có điểm âm, thì trừ số âm sẽ thành cộng lại => Logic vẫn đúng)
+      customer.saved_points = (customer.saved_points || 0) - pointsToRevert;
+
       await customer.save();
     }
 
+    // C. Xóa ghi nợ và Xóa phiếu
     await DebtRecord.deleteOne({ reference_code: receipt.code });
     await receipt.deleteOne();
 
-    res.json({ message: 'Đã xóa phiếu xuất và hoàn kho.' });
+    res.json({ message: 'Đã xóa phiếu, hoàn kho và cập nhật lại điểm.' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
