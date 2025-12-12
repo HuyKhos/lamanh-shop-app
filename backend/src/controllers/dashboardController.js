@@ -154,28 +154,31 @@ const getDashboardData = async (req, res) => {
     // Chỉ lấy nợ dương (> 0), sắp xếp hạn thanh toán tăng dần (ai hết hạn trước hiện trước)
     // Giới hạn 20 dòng để Dashboard nhẹ
     const debtList = await DebtRecord.find({
-      $expr: { $gt: ["$amount", "$paid_amount"] } 
-    })
-    .populate('partner_id', 'name phone')
-    .sort({ dueDate: 1 }) // Sắp xếp hạn tới trước lên đầu
-    .limit(20);
+      // Chỉ lấy những bản ghi có amount tồn tại
+      amount: { $exists: true } 
+   })
+   .populate('partner_id', 'name phone')
+   .sort({ dueDate: 1 }); // Sắp xếp hạn
 
-    // Map dữ liệu và TỰ TÍNH remaining tại đây
-    const formattedDebts = debtList.map(d => {
-        // Tính toán số còn lại ngay lúc chạy
-        const remainingCalc = d.amount - (d.paid_amount || 0);
-        
-        return {
-          _id: d._id,
-          customer: d.partner_id ? d.partner_id.name : 'Khách lẻ',
-          phone: d.partner_id ? d.partner_id.phone : '',
-          
-          // Gán giá trị vừa tính được vào biến remaining để Frontend hiển thị
-          remaining: remainingCalc, 
-          
-          dueDate: d.dueDate
-        };
-    });
+   // Bước 2: Map và Lọc bằng Javascript (Chính xác tuyệt đối)
+   const formattedDebts = debtList
+     .map(d => {
+       // Tính toán số còn lại: Nếu không có paid_amount thì coi như bằng 0
+       const paid = d.paid_amount || 0;
+       const remainingCalc = d.amount - paid;
+       
+       return {
+         _id: d._id,
+         customer: d.partner_id ? d.partner_id.name : 'Khách lẻ',
+         phone: d.partner_id ? d.partner_id.phone : '',
+         remaining: remainingCalc, 
+         dueDate: d.dueDate
+       };
+     })
+     // [QUAN TRỌNG] Lọc bỏ những dòng <= 0 hoặc sai số nhỏ (< 1000đ)
+     .filter(item => item.remaining > 0)
+     // Lấy 20 dòng đầu tiên sau khi đã lọc sạch
+     .slice(0, 20);
 
     // Top sản phẩm
     const topProducts = await ExportReceipt.aggregate([
