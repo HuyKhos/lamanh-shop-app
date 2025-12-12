@@ -3,7 +3,7 @@ import Product from '../models/productModel.js';
 import Partner from '../models/partnerModel.js';
 import Config from '../models/configModel.js';
 import ImportReceipt from '../models/importModel.js';
-import DebtRecord from '../models/Debmodel.js';
+import DebtRecord from '../models/debtModel.js';
 
 const getDashboardData = async (req, res) => {
   try {
@@ -153,19 +153,29 @@ const getDashboardData = async (req, res) => {
     // --- 5. Lấy danh sách Công nợ (ĐÃ TỐI ƯU) ---
     // Chỉ lấy nợ dương (> 0), sắp xếp hạn thanh toán tăng dần (ai hết hạn trước hiện trước)
     // Giới hạn 20 dòng để Dashboard nhẹ
-    const debtList = await DebtRecord.find({ remaining: { $gt: 0 } })
-      .populate('partner_id', 'name phone')
-      .sort({ dueDate: 1 }) 
-      .limit(20);
+    const debtList = await DebtRecord.find({
+      $expr: { $gt: ["$amount", "$paid_amount"] } 
+    })
+    .populate('partner_id', 'name phone')
+    .sort({ dueDate: 1 }) // Sắp xếp hạn tới trước lên đầu
+    .limit(20);
 
-    // Map dữ liệu chuẩn để gửi về Frontend
-    const formattedDebts = debtList.map(d => ({
-      _id: d._id,
-      customer: d.partner_id ? d.partner_id.name : 'Khách lẻ',
-      phone: d.partner_id ? d.partner_id.phone : '',
-      remaining: d.remaining, // Số tiền còn nợ
-      dueDate: d.dueDate      // Hạn thanh toán
-    }));
+    // Map dữ liệu và TỰ TÍNH remaining tại đây
+    const formattedDebts = debtList.map(d => {
+        // Tính toán số còn lại ngay lúc chạy
+        const remainingCalc = d.amount - (d.paid_amount || 0);
+        
+        return {
+          _id: d._id,
+          customer: d.partner_id ? d.partner_id.name : 'Khách lẻ',
+          phone: d.partner_id ? d.partner_id.phone : '',
+          
+          // Gán giá trị vừa tính được vào biến remaining để Frontend hiển thị
+          remaining: remainingCalc, 
+          
+          dueDate: d.dueDate
+        };
+    });
 
     // Top sản phẩm
     const topProducts = await ExportReceipt.aggregate([
