@@ -81,7 +81,10 @@ const Dashboard = () => {
   if (loading) return <div className="p-6 text-gray-500">Đang cập nhật số liệu...</div>;
   if (!data) return <div className="p-6">Không có dữ liệu</div>;
 
-  const formatCurrency = (val) => val?.toLocaleString('vi-VN') + ' ₫';
+  const formatCurrency = (val) => {
+    if (val === undefined || val === null) return '0 ₫';
+    return Math.round(val).toLocaleString('vi-VN') + ' ₫';
+  };
 
   // --- CẤU HÌNH BIỂU ĐỒ ---
   const lineData = {

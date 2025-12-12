@@ -4,7 +4,7 @@ import {
   ArrowDownToLine, Plus, Search, X, User, FileText, 
   Trash2, Save, Menu, Barcode, Package, DollarSign,
   ArrowUpDown, ArrowUp, ArrowDown, Filter, FileSpreadsheet, Pencil, Eye, Loader2,
-  ChevronLeft, ChevronRight, Upload, Download, RefreshCw // <--- Thêm Upload, Download
+  ChevronLeft, ChevronRight, Upload, Download, RefreshCw
 } from 'lucide-react';
 import axiosClient from '../api/axiosClient';
 import { toast } from 'react-toastify';
@@ -25,8 +25,6 @@ const ImportPage = () => {
   const [showModal, setShowModal] = useState(false);
   const [isViewMode, setIsViewMode] = useState(false); 
   const [isSubmitting, setIsSubmitting] = useState(false); 
-
-  // --- STATE ANIMATION ĐÓNG ---
   const [isClosing, setIsClosing] = useState(false);
 
   const [partners, setPartners] = useState([]);
@@ -42,12 +40,7 @@ const ImportPage = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10); 
 
-  const [newImport, setNewImport] = useState({
-    code: '', 
-    supplier_id: '',
-    note: '',
-    details: [] 
-  });
+  const [newImport, setNewImport] = useState(INITIAL_IMPORT_STATE);
 
   const [productSearch, setProductSearch] = useState('');
   const [filteredProducts, setFilteredProducts] = useState([]);
@@ -56,7 +49,13 @@ const ImportPage = () => {
 
   const searchInputRef = useRef(null); 
   const listRef = useRef(null); 
-  const fileInputRef = useRef(null); // <--- Ref cho input file Excel
+  const fileInputRef = useRef(null); 
+
+  // Utils Format
+  const formatCurrency = (amount) => {
+      if (amount === undefined || amount === null) return '0';
+      return Number(amount).toLocaleString('vi-VN', { maximumFractionDigits: 0 });
+  };
 
   // --- HÀM ĐÓNG MODAL CÓ HIỆU ỨNG ---
   const handleCloseModal = () => {
@@ -76,11 +75,7 @@ const ImportPage = () => {
           const res = await axiosClient.get('/imports');
           setImports(res); 
           updateCache('imports', res);
-        } catch (error) {
-          console.error(error);
-        } finally {
-          setLoading(false);
-        }
+        } catch (error) { console.error(error); } finally { setLoading(false); }
       }
     };
     loadData();
@@ -98,28 +93,15 @@ const ImportPage = () => {
       updateCache('imports', importRes);
       setSuppliers(supplierRes);
       setProducts(productRes);
-    } catch (error) {
-      toast.error('Lỗi tải dữ liệu');
-    } finally {
-      setLoading(false);
-    }
+    } catch (error) { toast.error('Lỗi tải dữ liệu'); } finally { setLoading(false); }
   };
 
-  const supplierOptions = suppliers
-    .map(s => ({
-        value: s._id,
-        label: s.name // <--- Chỉ lấy Tên
-    }));
+  const supplierOptions = suppliers.map(s => ({ value: s._id, label: s.name }));
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, sortConfig]);
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, sortConfig]);
-
-  // --- LOGIC FORM & UI ---
+  // --- UI SCROLL & FOCUS ---
   useEffect(() => {
     if (activeIndex !== -1 && listRef.current) {
       const listItems = listRef.current.children;
@@ -129,80 +111,80 @@ const ImportPage = () => {
     }
   }, [activeIndex]);
 
+  // Tự động focus vào ô số lượng khi thêm sản phẩm mới
   useEffect(() => {
     if (newImport.details.length > 0) {
       const lastIndex = newImport.details.length - 1;
       const quantityInput = document.getElementById(`quantity-${lastIndex}`);
       if (quantityInput) {
-        // Chỉ focus nếu không phải do import excel hàng loạt (tránh nhảy loạn xạ)
-        // Tuy nhiên logic này đơn giản cứ focus dòng cuối
-        // quantityInput.focus(); // Tạm tắt để tránh lỗi khi import nhiều dòng
+         quantityInput.focus();
+         quantityInput.select();
       }
     }
   }, [newImport.details.length]);
 
-  // 1. Tự động LƯU nháp vào globalCache khi có thay đổi
+  // --- LOGIC FORM: LƯU NHÁP & KHÔI PHỤC (Local Storage) ---
+  const DRAFT_KEY = 'import_draft_data';
+
   useEffect(() => {
     if (showModal && !isViewMode) {
-      // Lưu toàn bộ state newImport vào cache với key 'importDraft'
-      updateCache('importDraft', newImport);
+       if (newImport.supplier_id || newImport.details.length > 0) {
+           localStorage.setItem(DRAFT_KEY, JSON.stringify(newImport));
+       }
     }
   }, [newImport, showModal, isViewMode]);
 
-  // 2. KHÔI PHỤC nháp khi mở Modal
   useEffect(() => {
     if (showModal && !isViewMode) {
-      const draft = globalCache.importDraft;
-
-      // Kiểm tra xem có bản nháp "có dữ liệu" không (có NCC hoặc có sản phẩm)
-      if (draft && (draft.supplier_id || draft.details.length > 0)) {
-        setNewImport(draft);
-        setProductSearch('');
-        setFilteredProducts([]);
-        setIsSubmitting(false);
-        toast.info('Đã khôi phục phiếu nhập đang soạn dở', { autoClose: 1000 });
-      } else {
-        // Nếu không có nháp, kiểm tra xem hiện tại form có dữ liệu chưa
-        // Nếu chưa có gì (mới mở) thì reset và lấy mã mới
-        const isDraftCurrent = newImport.supplier_id || newImport.details.length > 0;
-        if (!isDraftCurrent) {
-            setNewImport({ ...INITIAL_IMPORT_STATE, code: 'Đang tải mã...' });
-            setProductSearch('');
-            setFilteredProducts([]);
-            setIsSubmitting(false);
-            
-            // Gọi API lấy mã mới
-            const fetchNewCode = async () => {
-                try {
-                  const res = await axiosClient.get('/imports/new-code');
-                  setNewImport(prev => ({ ...prev, code: res.code }));
-                } catch (error) { console.error(error); }
-            };
-            fetchNewCode();
-        }
+      const savedDraft = localStorage.getItem(DRAFT_KEY);
+      if (savedDraft) {
+         try {
+             const parsedDraft = JSON.parse(savedDraft);
+             if (parsedDraft.supplier_id || parsedDraft.details.length > 0) {
+                 setNewImport(parsedDraft);
+                 setProductSearch('');
+                 setFilteredProducts([]);
+                 setIsSubmitting(false);
+                 toast.info('Đã khôi phục phiếu nhập đang soạn dở', { autoClose: 1000 });
+                 return;
+             }
+         } catch (e) { localStorage.removeItem(DRAFT_KEY); }
+      }
+      
+      const isDraftCurrent = newImport.supplier_id || newImport.details.length > 0;
+      if (!isDraftCurrent) {
+          setNewImport({ ...INITIAL_IMPORT_STATE, code: 'Đang tải mã...' });
+          setProductSearch('');
+          setFilteredProducts([]);
+          setIsSubmitting(false);
+          
+          const fetchNewCode = async () => {
+             try {
+               const res = await axiosClient.get('/imports/new-code');
+               setNewImport(prev => ({ ...prev, code: res.code }));
+             } catch (error) { console.error(error); }
+          };
+          fetchNewCode();
       }
     }
   }, [showModal, isViewMode]);
 
-  // Hàm Reset thủ công (khi người dùng muốn xóa nháp để nhập mới)
   const handleResetForm = () => {
     if (window.confirm('Xóa hết dữ liệu đang nhập để tạo phiếu mới?')) {
         setNewImport(INITIAL_IMPORT_STATE);
-        updateCache('importDraft', null); // Xóa cache
-        
-        // Lấy lại mã mới
+        localStorage.removeItem(DRAFT_KEY);
         const fetchNewCode = async () => {
             try {
               const res = await axiosClient.get('/imports/new-code');
               setNewImport(prev => ({ ...prev, code: res.code }));
             } catch (error) { console.error(error); }
-        };
-        fetchNewCode();
-        toast.info('Đã làm mới form');
+         };
+         fetchNewCode();
+         toast.info('Đã làm mới form');
     }
   };
 
-  // --- XỬ LÝ DỮ LIỆU & PHÂN TRANG ---
+  // --- XỬ LÝ DỮ LIỆU & PHÂN TRANG TABLE CHÍNH ---
   const getProcessedImports = () => {
     let result = [...imports];
     if (searchTerm) {
@@ -256,13 +238,9 @@ const ImportPage = () => {
   const currentItems = processedImports.slice(indexOfFirstItem, indexOfLastItem);
   const totalPages = Math.ceil(processedImports.length / itemsPerPage);
 
-  const paginate = (pageNumber) => {
-    if (pageNumber > 0 && pageNumber <= totalPages) {
-      setCurrentPage(pageNumber);
-    }
-  };
+  const paginate = (pageNumber) => { if (pageNumber > 0 && pageNumber <= totalPages) setCurrentPage(pageNumber); };
 
-  // --- SEARCH PRODUCT & ADD TO FORM ---
+  // --- LOGIC TÌM KIẾM SẢN PHẨM (SMART SEARCH) ---
   useEffect(() => {
     if (!isSearchFocus && productSearch.trim() === '') {
       setFilteredProducts([]); 
@@ -273,50 +251,48 @@ const ImportPage = () => {
     if (isSearchFocus && productSearch.trim() === '') {
       results = products;
     } else {
-      const lower = productSearch.toLowerCase();
-      results = products.filter(p => 
-        p.name.toLowerCase().includes(lower) || 
-        (p.sku && p.sku.toLowerCase().includes(lower))
-      );
+      // Logic tìm kiếm đa từ khóa (Giống ExportPage)
+      const searchKeywords = productSearch.toLowerCase().split(/\s+/).filter(word => word.length > 0);
+      results = products.filter(p => {
+        const productName = p.name.toLowerCase();
+        const productSku = (p.sku || '').toLowerCase();
+        return searchKeywords.every(keyword => 
+            productName.includes(keyword) || productSku.includes(keyword)
+        );
+      });
     }
     setFilteredProducts(results);
     if (results.length > 0) setActiveIndex(0);
     else setActiveIndex(-1);
   }, [productSearch, products, isSearchFocus]);
 
-// --- Sửa hàm handleKeyDown trong ExportPage.jsx ---
-const handleKeyDown = (e) => {
-  if (filteredProducts.length === 0) return;
+  // --- KEYBOARD NAVIGATION (GIỐNG EXPORT PAGE) ---
+  const handleKeyDown = (e) => {
+    if (filteredProducts.length === 0) return;
 
-  // Xử lý nút Mũi tên xuống HOẶC nút Tab
-  if (e.key === 'ArrowDown' || e.key === 'Tab') {
-    e.preventDefault(); 
-    // Di chuyển xuống dưới, nếu đang ở cuối thì giữ nguyên
-    setActiveIndex(prev => (prev < filteredProducts.length - 1 ? prev + 1 : prev));
-  } 
-  // Xử lý nút Mũi tên lên
-  else if (e.key === 'ArrowUp') {
-    e.preventDefault();
-    // Di chuyển lên trên, nếu đang ở đầu (0) thì giữ nguyên
-    setActiveIndex(prev => (prev > 0 ? prev - 1 : 0));
-  } 
-  // Xử lý nút Enter
-  else if (e.key === 'Enter') {
-    e.preventDefault();
-    // Nếu activeIndex hợp lệ thì chọn sản phẩm đó
-    if (activeIndex >= 0 && filteredProducts[activeIndex]) {
-      addProductToExport(filteredProducts[activeIndex]);
+    if (e.key === 'ArrowDown' || e.key === 'Tab') {
+      e.preventDefault(); 
+      setActiveIndex(prev => (prev < filteredProducts.length - 1 ? prev + 1 : prev));
     } 
-    // Fallback: Nếu vì lý do nào đó chưa chọn (ví dụ -1) nhưng có danh sách, chọn cái đầu tiên
-    else if (filteredProducts.length > 0) {
-      addProductToExport(filteredProducts[0]);
+    else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveIndex(prev => (prev > 0 ? prev - 1 : 0));
+    } 
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (activeIndex >= 0 && filteredProducts[activeIndex]) {
+        addProductToImport(filteredProducts[activeIndex]);
+      } 
+      else if (filteredProducts.length > 0) {
+        addProductToImport(filteredProducts[0]);
+      }
+    } 
+    else if (e.key === 'Escape') {
+      setIsSearchFocus(false);
     }
-  } 
-  // Xử lý nút ESC
-  else if (e.key === 'Escape') {
-    setIsSearchFocus(false);
-  }
   };
+
+  // Khi Enter ở ô Số lượng -> Focus lại ô tìm kiếm để nhập tiếp
   const handleQuantityKeyDown = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -327,14 +303,15 @@ const handleKeyDown = (e) => {
   };
 
   const addProductToImport = (product) => {
+    const finalPrice = Math.round(product.import_price || 0); // Làm tròn giá
     const newItem = {
       product_id: product._id,
       product_name_backup: product.name,
       sku: product.sku,
       unit: product.unit,
       quantity: 1, 
-      import_price: product.import_price || 0, 
-      total: product.import_price || 0
+      import_price: finalPrice, 
+      total: Math.round(finalPrice)
     };
     setNewImport(prev => ({
       ...prev,
@@ -346,28 +323,23 @@ const handleKeyDown = (e) => {
     setActiveIndex(-1);
   };
   
-  // --- HÀM CHẶN CUỘN CHUỘT VÀ MŨI TÊN ---
   const preventNumberInputScroll = (e) => {
-    // Chặn cuộn chuột: Khi lăn chuột, lập tức bỏ focus khỏi ô input
-    if (e.type === 'wheel') {
-        e.target.blur();
-    }
+    if (e.type === 'wheel') e.target.blur();
   };
 
+  // --- UPDATE CHI TIẾT (LAZY VALIDATION & MATH.ROUND) ---
   const updateDetail = (index, field, value) => {
     const updatedDetails = [...newImport.details];
     
-    // 1. Cho phép gán giá trị rỗng '' vào state để hiển thị trên UI
+    // 1. Cho phép gán giá trị rỗng '' vào state
     const val = value === '' ? '' : Number(value);
     updatedDetails[index][field] = val;
 
-    // 2. Tính toán Thành tiền (item.total) ngay lập tức
-    // QUAN TRỌNG: Dù val là '', ta ép kiểu về 0 để tính toán.
-    // Như vậy item.total LUÔN LÀ SỐ, hàm calculateTotalAmount bên dưới KHÔNG CẦN SỬA.
+    // 2. Tính toán Thành tiền an toàn
     const qty = field === 'quantity' ? (val === '' ? 0 : val) : (updatedDetails[index].quantity === '' ? 0 : updatedDetails[index].quantity);
     const price = field === 'import_price' ? (val === '' ? 0 : val) : (updatedDetails[index].import_price === '' ? 0 : updatedDetails[index].import_price);
     
-    updatedDetails[index].total = qty * price;
+    updatedDetails[index].total = Math.round(qty * price);
     
     setNewImport({ ...newImport, details: updatedDetails });
   };
@@ -380,12 +352,23 @@ const handleKeyDown = (e) => {
         const updatedDetails = [...newImport.details];
         updatedDetails[index][field] = 0;
         
-        // Tính lại total cho chắc chắn (dù ở step 1 đã tính rồi, nhưng set lại cho clean)
         const qty = updatedDetails[index].quantity;
         const price = updatedDetails[index].import_price;
-        updatedDetails[index].total = qty * price;
+        updatedDetails[index].total = Math.round(qty * price);
 
         setNewImport({ ...newImport, details: updatedDetails });
+    }
+
+    // Xử lý làm tròn Giá nhập khi người dùng nhập số lẻ rồi bấm ra ngoài
+    if (field === 'import_price' && typeof detailItem[field] === 'number') {
+         const updatedDetails = [...newImport.details];
+         updatedDetails[index][field] = Math.round(detailItem[field]);
+         
+         const qty = updatedDetails[index].quantity;
+         const price = updatedDetails[index][field];
+         updatedDetails[index].total = Math.round(qty * price);
+         
+         setNewImport({ ...newImport, details: updatedDetails });
     }
   };
 
@@ -394,16 +377,12 @@ const handleKeyDown = (e) => {
     setNewImport({ ...newImport, details: updatedDetails });
   };
 
-  const calculateTotalAmount = () => newImport.details.reduce((sum, item) => sum + item.total, 0);
-  const calculateTotalQuantity = () => newImport.details.reduce((sum, item) => sum + item.quantity, 0);
+  const calculateTotalAmount = () => Math.round(newImport.details.reduce((sum, item) => sum + item.total, 0));
+  const calculateTotalQuantity = () => newImport.details.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
 
-  // --- XỬ LÝ IMPORT EXCEL (MỚI) ---
+  // --- XỬ LÝ IMPORT EXCEL ---
   const handleDownloadTemplate = () => {
-    const templateData = [
-      ['Tên sản phẩm', 'Số lượng'],
-      ['Sữa Ông Thọ', 10],
-      ['Bánh Mì', 5],
-    ];
+    const templateData = [ ['Tên sản phẩm', 'Số lượng'], ['Sữa Ông Thọ', 10], ['Bánh Mì', 5] ];
     const ws = XLSX.utils.aoa_to_sheet(templateData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "MauNhapKho");
@@ -421,13 +400,11 @@ const handleKeyDown = (e) => {
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        // Đọc dữ liệu dạng mảng [ [col1, col2], [col1, col2] ]
         const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
         const importedDetails = [];
         const notFoundProducts = [];
 
-        // Bắt đầu duyệt từ dòng thứ 2 (index 1) vì dòng 0 là tiêu đề
         for (let i = 1; i < data.length; i++) {
           const row = data[i];
           if (!row || row.length === 0) continue;
@@ -437,18 +414,18 @@ const handleKeyDown = (e) => {
 
           if (!productName) continue;
 
-          // Tìm sản phẩm trong danh sách products đã tải
           const product = products.find(p => p.name.toLowerCase() === productName.toLowerCase());
 
           if (product) {
+            const finalPrice = Math.round(product.import_price || 0);
             importedDetails.push({
               product_id: product._id,
               product_name_backup: product.name,
               sku: product.sku,
               unit: product.unit,
               quantity: quantity > 0 ? quantity : 1,
-              import_price: product.import_price || 0,
-              total: (quantity > 0 ? quantity : 1) * (product.import_price || 0)
+              import_price: finalPrice,
+              total: Math.round((quantity > 0 ? quantity : 1) * finalPrice)
             });
           } else {
             notFoundProducts.push(productName);
@@ -456,24 +433,14 @@ const handleKeyDown = (e) => {
         }
 
         if (importedDetails.length > 0) {
-          setNewImport(prev => ({
-            ...prev,
-            details: [...prev.details, ...importedDetails]
-          }));
+          setNewImport(prev => ({ ...prev, details: [...prev.details, ...importedDetails] }));
           toast.success(`Đã thêm ${importedDetails.length} sản phẩm từ file!`);
         }
-
         if (notFoundProducts.length > 0) {
           toast.warn(`Không tìm thấy ${notFoundProducts.length} sản phẩm: ${notFoundProducts.slice(0, 3).join(', ')}...`);
         }
-
-      } catch (error) {
-        console.error(error);
-        toast.error('Lỗi đọc file Excel. Vui lòng kiểm tra định dạng.');
-      } finally {
-        // Reset input file để chọn lại cùng file nếu muốn
-        if (fileInputRef.current) fileInputRef.current.value = '';
-      }
+      } catch (error) { toast.error('Lỗi đọc file Excel.'); } 
+      finally { if (fileInputRef.current) fileInputRef.current.value = ''; }
     };
     reader.readAsBinaryString(file);
   };
@@ -492,7 +459,9 @@ const handleKeyDown = (e) => {
         total_quantity: calculateTotalQuantity()
       };
       await axiosClient.post('/imports', payload);
-      updateCache('importDraft', null);
+      
+      localStorage.removeItem(DRAFT_KEY);
+      
       toast.success('Nhập kho thành công! 🎉');
       triggerRefresh(['exports', 'products', 'debts', 'dashboard', 'partners']);
       setNewImport(INITIAL_IMPORT_STATE);
@@ -556,17 +525,7 @@ const handleKeyDown = (e) => {
 
   return (
     <div className="p-2 pb-10">
-      {/* --- ĐỊNH NGHĨA KEYFRAMES ANIMATION (FadeIn & FadeOut) --- */}
-      <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; transform: scale(0.95); }
-          to { opacity: 1; transform: scale(1); }
-        }
-        @keyframes fadeOut {
-          from { opacity: 1; transform: scale(1); }
-          to { opacity: 0; transform: scale(0.95); }
-        }
-      `}</style>
+      <style>{`@keyframes fadeIn {from { opacity: 0; transform: scale(0.95); }to { opacity: 1; transform: scale(1); }}@keyframes fadeOut {from { opacity: 1; transform: scale(1); }to { opacity: 0; transform: scale(0.95); }}`}</style>
 
       {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
@@ -605,21 +564,11 @@ const handleKeyDown = (e) => {
           <table className="w-full text-left border-collapse">
             <thead className="bg-blue-50 text-gray-600 font-semibold text-sm border-b">
               <tr>
-                <th className="p-4 cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('code')}>
-                  <div className="flex items-center">Mã phiếu {renderSortIcon('code')}</div>
-                </th>
-                <th className="p-4 cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('date')}>
-                  <div className="flex items-center">Ngày nhập {renderSortIcon('date')}</div>
-                </th>
-                <th className="p-4 cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('supplier')}>
-                  <div className="flex items-center">Nhà cung cấp {renderSortIcon('supplier')}</div>
-                </th>
-                <th className="p-4 text-right cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('total_amount')}>
-                  <div className="flex items-center justify-end">Tổng tiền {renderSortIcon('total_amount')}</div>
-                </th>
-                <th className="p-4 text-center cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('total_quantity')}>
-                  <div className="flex items-center justify-center">Tổng SL {renderSortIcon('total_quantity')}</div>
-                </th>
+                <th className="p-4 cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('code')}><div className="flex items-center">Mã phiếu {renderSortIcon('code')}</div></th>
+                <th className="p-4 cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('date')}><div className="flex items-center">Ngày nhập {renderSortIcon('date')}</div></th>
+                <th className="p-4 cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('supplier')}><div className="flex items-center">Nhà cung cấp {renderSortIcon('supplier')}</div></th>
+                <th className="p-4 text-right cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('total_amount')}><div className="flex items-center justify-end">Tổng tiền {renderSortIcon('total_amount')}</div></th>
+                <th className="p-4 text-center cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('total_quantity')}><div className="flex items-center justify-center">Tổng SL {renderSortIcon('total_quantity')}</div></th>
                 <th className="p-4">Ghi chú</th>
                 <th className="p-4 text-center w-28">Thao tác</th>
               </tr>
@@ -633,10 +582,9 @@ const handleKeyDown = (e) => {
                     <td className="p-4 font-bold text-blue-600 text-sm font-mono">{item.code}</td>
                     <td className="p-4 text-gray-800">{new Date(item.date).toLocaleDateString('vi-VN')}</td>
                     <td className="p-4 font-medium text-gray-800">{item.supplier_id?.name || <span className="text-red-400 italic">NCC đã xóa</span>}</td>
-                    <td className="p-4 text-right font-bold text-gray-800">{item.total_amount?.toLocaleString()}₫</td>
+                    <td className="p-4 text-right font-bold text-gray-800">{formatCurrency(item.total_amount)}₫</td>
                     <td className="p-4 text-center"><span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-bold">{item.total_quantity}</span></td>
                     <td className="p-4 text-gray-500 text-sm italic">{item.note || '-'}</td>
-                    
                     <td className="p-4 text-center flex justify-center gap-2">
                       <button onClick={(e) => handleExportSingleExcel(e, item)} className="p-2 text-green-600 hover:bg-green-50 rounded-full transition-all" title="Xuất Excel">
                         <FileSpreadsheet size={18} />
@@ -658,60 +606,13 @@ const handleKeyDown = (e) => {
               <div className="text-sm text-gray-500">
                 Hiển thị {indexOfFirstItem + 1}-{Math.min(indexOfLastItem, processedImports.length)} trong số {processedImports.length} phiếu
               </div>
-              
               <div className="flex items-center gap-2">
-                <select 
-                  className="border border-gray-300 rounded-md text-sm px-2 py-1 focus:ring-1 focus:ring-blue-500 outline-none"
-                  value={itemsPerPage}
-                  onChange={(e) => {
-                    setItemsPerPage(Number(e.target.value));
-                    setCurrentPage(1);
-                  }}
-                >
-                  <option value="10">10 dòng</option>
-                  <option value="20">20 dòng</option>
-                  <option value="50">50 dòng</option>
-                  <option value="100">100 dòng</option>
+                <select className="border border-gray-300 rounded-md text-sm px-2 py-1 focus:ring-1 focus:ring-blue-500 outline-none" value={itemsPerPage} onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}>
+                  <option value="10">10 dòng</option><option value="20">20 dòng</option><option value="50">50 dòng</option><option value="100">100 dòng</option>
                 </select>
-
-                <button 
-                  onClick={() => paginate(currentPage - 1)} 
-                  disabled={currentPage === 1}
-                  className={`p-1 rounded-md border ${currentPage === 1 ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50'}`}
-                >
-                  <ChevronLeft size={20} />
-                </button>
-                
-                <div className="flex gap-1">
-                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                    let pageNum = i + 1;
-                    if (totalPages > 5) {
-                        if (currentPage > 3) pageNum = currentPage - 2 + i;
-                        if (pageNum > totalPages) pageNum = totalPages - 4 + i;
-                    }
-                    return (
-                      <button
-                        key={pageNum}
-                        onClick={() => paginate(pageNum)}
-                        className={`w-8 h-8 flex items-center justify-center rounded-md text-sm font-medium transition-colors ${
-                          currentPage === pageNum 
-                            ? 'bg-blue-600 text-white shadow-sm' 
-                            : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
-                        }`}
-                      >
-                        {pageNum}
-                      </button>
-                    )
-                  })}
-                </div>
-
-                <button 
-                  onClick={() => paginate(currentPage + 1)} 
-                  disabled={currentPage === totalPages}
-                  className={`p-1 rounded-md border ${currentPage === totalPages ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50'}`}
-                >
-                  <ChevronRight size={20} />
-                </button>
+                <button onClick={() => paginate(currentPage - 1)} disabled={currentPage === 1} className={`p-1 rounded-md border ${currentPage === 1 ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50'}`}><ChevronLeft size={20} /></button>
+                <div className="flex gap-1">{Array.from({ length: Math.min(5, totalPages) }, (_, i) => { let pageNum = i + 1; if (totalPages > 5) { if (currentPage > 3) pageNum = currentPage - 2 + i; if (pageNum > totalPages) pageNum = totalPages - 4 + i; } return (<button key={pageNum} onClick={() => paginate(pageNum)} className={`w-8 h-8 flex items-center justify-center rounded-md text-sm font-medium transition-colors ${ currentPage === pageNum ? 'bg-blue-600 text-white shadow-sm' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50' }`}>{pageNum}</button>) })}</div>
+                <button onClick={() => paginate(currentPage + 1)} disabled={currentPage === totalPages} className={`p-1 rounded-md border ${currentPage === totalPages ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50'}`}><ChevronRight size={20} /></button>
               </div>
             </div>
         )}
@@ -732,14 +633,8 @@ const handleKeyDown = (e) => {
                     {isViewMode ? <><Eye size={24} className="text-blue-600" /> Chi tiết phiếu nhập</> : <><Plus size={24} className="text-blue-600" /> Tạo phiếu nhập kho</>}
                   </h2>
                   
-                  {/* Nút Làm Mới - Chỉ hiện khi đang tạo mới */}
                   {!isViewMode && (
-                    <button 
-                        type="button" 
-                        onClick={handleResetForm} 
-                        className="flex items-center gap-1 text-sm bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-full transition-colors border border-gray-200 whitespace-nowrap" 
-                        title="Xóa trắng form để nhập mới"
-                    >
+                    <button type="button" onClick={handleResetForm} className="flex items-center gap-1 text-sm bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-full transition-colors border border-gray-200 whitespace-nowrap" title="Xóa trắng form để nhập mới">
                         <RefreshCw size={14} /> Làm mới
                     </button>
                   )}
@@ -758,7 +653,7 @@ const handleKeyDown = (e) => {
                     options={supplierOptions}
                     value={supplierOptions.find(s => s.value === newImport.supplier_id) || null}
                     onChange={(selected) => setNewImport({...newImport, supplier_id: selected ? selected.value : ''})}
-                    isDisabled={isViewMode} // Hoặc biến kiểm tra chế độ xem của bạn
+                    isDisabled={isViewMode}
                     placeholder="-- Nhập tên --"
                     isClearable
                     isSearchable
@@ -784,7 +679,6 @@ const handleKeyDown = (e) => {
               {!isViewMode && (
                 <div className="sticky top-0 z-20 bg-gray-50 pt-2 pb-4 mb-2 shadow-sm border-b border-gray-200">
                   <div className="flex flex-col gap-3">
-                    {/* HÀNG 1: SEARCH & NÚT NHẬP EXCEL */}
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2"><Search size={18} className="text-blue-600" /><label className="font-bold text-gray-800 text-sm uppercase">Thêm sản phẩm vào phiếu</label></div>
                         <div className="flex gap-2">
@@ -802,33 +696,13 @@ const handleKeyDown = (e) => {
                         </div>
                     </div>
 
-                    {/* HÀNG 2: INPUT SEARCH */}
-                    <input 
-                        ref={searchInputRef}
-                        type="text" 
-                        className="w-full border border-blue-300 rounded-lg p-3 shadow-sm focus:ring-1 focus:ring-blue-500 outline-none transition-all" 
-                        placeholder="Gõ tên hoặc mã sản phẩm để tìm..." 
-                        value={productSearch} 
-                        onChange={(e) => setProductSearch(e.target.value)} 
-                        onFocus={() => setIsSearchFocus(true)} 
-                        onBlur={() => setTimeout(() => setIsSearchFocus(false), 200)}
-                        onKeyDown={handleKeyDown} 
-                    />
+                    <input ref={searchInputRef} type="text" className="w-full border border-blue-300 rounded-lg p-3 shadow-sm focus:ring-1 focus:ring-blue-500 outline-none transition-all" placeholder="Gõ tên hoặc mã sản phẩm để tìm..." value={productSearch} onChange={(e) => setProductSearch(e.target.value)} onFocus={() => setIsSearchFocus(true)} onBlur={() => setTimeout(() => setIsSearchFocus(false), 200)} onKeyDown={handleKeyDown} />
                   </div>
                   
                   {filteredProducts.length > 0 && (productSearch || isSearchFocus) && (
-                    <div 
-                      ref={listRef}
-                      className="absolute top-full left-0 right-0 bg-white shadow-xl border rounded-lg mt-1 z-10 max-h-60 overflow-y-auto"
-                    >
+                    <div ref={listRef} className="absolute top-full left-0 right-0 bg-white shadow-xl border rounded-lg mt-1 z-10 max-h-60 overflow-y-auto">
                       {filteredProducts.map((p, index) => (
-                        <div 
-                          key={p._id} 
-                          className={`p-3 cursor-pointer border-b flex justify-between items-center transition-colors ${
-                            index === activeIndex ? 'bg-blue-100 border-l-4 border-l-blue-600' : 'hover:bg-blue-50'
-                          }`}
-                          onClick={() => addProductToImport(p)}
-                        >
+                        <div key={p._id} className={`p-3 cursor-pointer border-b flex justify-between items-center transition-colors ${index === activeIndex ? 'bg-blue-100 border-l-4 border-l-blue-600' : 'hover:bg-blue-50'}`} onClick={() => addProductToImport(p)}>
                           <div>
                             <div className="font-bold text-gray-800">{p.name}</div>
                             <div className="text-xs text-gray-500 flex gap-2 mt-1">
@@ -847,20 +721,10 @@ const handleKeyDown = (e) => {
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden mt-3">
                 <table className="w-full text-left">
                   <thead className="bg-gray-100 text-gray-700 text-sm uppercase font-semibold">
-                    <tr>
-                      <th className="p-3 w-10 text-center">#</th>
-                      <th className="p-3">Tên sản phẩm</th>
-                      <th className="p-3 w-24">Đơn vị</th>
-                      <th className="p-3 w-32 text-right">Số lượng</th>
-                      <th className="p-3 w-40 text-right">Giá nhập</th>
-                      <th className="p-3 w-40 text-right">Thành tiền</th>
-                      <th className="p-3 w-10"></th>
-                    </tr>
+                    <tr><th className="p-3 w-10 text-center">#</th><th className="p-3">Tên sản phẩm</th><th className="p-3 w-24">Đơn vị</th><th className="p-3 w-32 text-right">Số lượng</th><th className="p-3 w-40 text-right">Giá nhập</th><th className="p-3 w-40 text-right">Thành tiền</th><th className="p-3 w-10"></th></tr>
                   </thead>
                   <tbody className="divide-y">
-                    {newImport.details.length === 0 ? (
-                      <tr><td colSpan="7" className="p-10 text-center text-gray-400 italic">Chưa có sản phẩm nào.</td></tr>
-                    ) : (
+                    {newImport.details.length === 0 ? ( <tr><td colSpan="7" className="p-10 text-center text-gray-400 italic">Chưa có sản phẩm nào.</td></tr> ) : (
                       newImport.details.map((item, index) => (
                         <tr key={index} className="hover:bg-blue-50 transition-colors">
                           <td className="p-3 text-center text-gray-500">{index + 1}</td>
@@ -870,12 +734,33 @@ const handleKeyDown = (e) => {
                             <input 
                                id={`quantity-${index}`} 
                                onKeyDown={handleQuantityKeyDown} 
-                               type="number" min="0" className="w-20 border border-gray-300 rounded p-1.5 text-right focus:ring-1 focus:ring-blue-500 outline-none font-bold text-gray-800" value={item.quantity} onChange={(e) => updateDetail(index, 'quantity', e.target.value)} onBlur={() => handleBlur(index, 'quantity')} onWheel={preventNumberInputScroll} disabled={isViewMode} />
+                               onFocus={(e) => e.target.select()} // Tự động bôi đen
+                               onBlur={() => handleBlur(index, 'quantity')}
+                               type="number" min="0" 
+                               className="w-20 border border-gray-300 rounded p-1.5 text-right focus:ring-1 focus:ring-blue-500 outline-none font-bold text-gray-800" 
+                               value={item.quantity} 
+                               onChange={(e) => updateDetail(index, 'quantity', e.target.value)} 
+                               onWheel={preventNumberInputScroll} 
+                               disabled={isViewMode} 
+                            />
                           </td>
                           <td className="p-3 text-right">
-                            <input type="number" className="w-32 border border-gray-300 rounded p-1.5 text-right focus:ring-1 focus:ring-blue-500 outline-none" value={item.import_price} onChange={(e) => updateDetail(index, 'import_price', e.target.value)} onBlur={() => handleBlur(index, 'import_price')} onWheel={preventNumberInputScroll} disabled={isViewMode}/>
+                            <input 
+                               type="text" 
+                               onFocus={(e) => e.target.select()} 
+                               onBlur={() => handleBlur(index, 'import_price')}
+                               className="w-32 border border-gray-300 rounded p-1.5 text-right focus:ring-1 focus:ring-blue-500 outline-none" 
+                               value={item.import_price ? Number(item.import_price).toLocaleString('vi-VN') : ''} // Hiện dấu chấm
+                               onChange={(e) => {
+                                   const rawValue = e.target.value.replace(/\./g, ''); // Xóa dấu chấm để lấy số
+                                   if (/^\d*$/.test(rawValue)) {
+                                       updateDetail(index, 'import_price', rawValue);
+                                   }
+                               }} 
+                               disabled={isViewMode}
+                            />
                           </td>
-                          <td className="p-3 text-right font-bold text-blue-600">{item.total.toLocaleString()}₫</td>
+                          <td className="p-3 text-right font-bold text-blue-600">{formatCurrency(item.total)}₫</td>
                           <td className="p-3 text-center">
                             {!isViewMode && (
                               <button onClick={() => removeDetail(index)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"><Trash2 size={18} /></button>
@@ -889,11 +774,19 @@ const handleKeyDown = (e) => {
               </div>
             </div>
 
-            <div className="p-5 border-t bg-white flex justify-between items-center rounded-b-xl">
-              <div className="flex gap-6">
-                <div className="text-gray-600 font-medium flex items-center gap-2"><DollarSign className="text-blue-600" /> Tổng tiền: <span className="text-2xl font-bold text-red-600 ml-1">{calculateTotalAmount().toLocaleString()}₫</span></div>
-                <div className="text-gray-600 font-medium flex items-center gap-2 border-l pl-6"><Package className="text-blue-600" /> Tổng SL: <span className="text-2xl font-bold text-blue-600 ml-1">{calculateTotalQuantity()}</span></div>
+            {/* --- FOOTER MODAL (ĐÃ CĂN PHẢI GIỐNG EXPORT PAGE) --- */}
+            <div className="p-5 border-t bg-white flex justify-end items-center rounded-b-xl gap-6">
+              
+              <div className="text-gray-600 font-medium flex items-center gap-2">
+                  <Package className="text-blue-600" /> 
+                  Tổng SL: <span className="text-2xl font-bold text-blue-600 ml-1">{calculateTotalQuantity()}</span>
               </div>
+
+              <div className="text-gray-600 font-medium flex items-center gap-2 border-l pl-6">
+                  <DollarSign className="text-blue-600" /> 
+                  Tổng tiền: <span className="text-2xl font-bold text-red-600 ml-1">{formatCurrency(calculateTotalAmount())}₫</span>
+              </div>
+
               <div className="flex gap-3">
                 <button onClick={handleCloseModal} className="px-6 py-2.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 font-medium transition-colors">Đóng</button>
                 {!isViewMode && (

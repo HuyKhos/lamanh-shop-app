@@ -94,17 +94,26 @@ const ProductPage = () => {
     }
   };
 
-  // --- LOGIC XỬ LÝ DỮ LIỆU ---
+  // --- LOGIC XỬ LÝ DỮ LIỆU (ĐÃ CẬP NHẬT TÌM KIẾM THÔNG MINH) ---
   const getProcessedProducts = () => {
     let result = [...products];
 
+    // --- SỬA ĐỔI TẠI ĐÂY: Logic tìm kiếm đa từ khóa ---
     if (searchTerm) {
-      const lowerTerm = searchTerm.toLowerCase();
-      result = result.filter(p => 
-        p.name.toLowerCase().includes(lowerTerm) || 
-        (p.sku && p.sku.toLowerCase().includes(lowerTerm))
-      );
+      // 1. Tách từ khóa người dùng nhập thành mảng các từ
+      const searchKeywords = searchTerm.toLowerCase().split(/\s+/).filter(word => word.length > 0);
+
+      result = result.filter(p => {
+        const productName = p.name.toLowerCase();
+        const productSku = (p.sku || '').toLowerCase();
+
+        // 2. Logic AND: Sản phẩm phải chứa TẤT CẢ các từ khóa trong Tên hoặc Mã
+        return searchKeywords.every(keyword => 
+            productName.includes(keyword) || productSku.includes(keyword)
+        );
+      });
     }
+    // --------------------------------------------------
 
     if (filterStatus !== 'all') {
       result = result.filter(p => {
@@ -508,7 +517,7 @@ const ProductPage = () => {
                     </div>
                     <div>
                       <label className="block text-sm font-medium
-                       text-gray-700 mb-1">Tên sản phẩm <span className="text-red-500">*</span></label>
+                        text-gray-700 mb-1">Tên sản phẩm <span className="text-red-500">*</span></label>
                       <input type="text" className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 outline-none" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
                     </div>
                   </div>

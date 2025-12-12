@@ -3,6 +3,7 @@ import Product from '../models/productModel.js';
 import Partner from '../models/partnerModel.js';
 import Config from '../models/configModel.js';
 import ImportReceipt from '../models/importModel.js';
+import DebtRecord from '../models/Debmodel.js';
 
 const getDashboardData = async (req, res) => {
   try {
@@ -149,14 +150,22 @@ const getDashboardData = async (req, res) => {
       { $sort: { _id: 1 } } 
     ]);
 
-    // Nhắc nợ
-    const debtReminder = await ExportReceipt.find({
-        $expr: { $gt: ["$total_amount", "$paid_amount"] }
-    })
-    .select('code customer_id total_amount paid_amount payment_due_date')
-    .populate('customer_id', 'name phone')
-    .sort({ payment_due_date: 1 }) 
-    .limit(5);
+    // --- 5. Lấy danh sách Công nợ (ĐÃ TỐI ƯU) ---
+    // Chỉ lấy nợ dương (> 0), sắp xếp hạn thanh toán tăng dần (ai hết hạn trước hiện trước)
+    // Giới hạn 20 dòng để Dashboard nhẹ
+    const debtList = await DebtRecord.find({ remaining: { $gt: 0 } })
+      .populate('partner_id', 'name phone')
+      .sort({ dueDate: 1 }) 
+      .limit(20);
+
+    // Map dữ liệu chuẩn để gửi về Frontend
+    const formattedDebts = debtList.map(d => ({
+      _id: d._id,
+      customer: d.partner_id ? d.partner_id.name : 'Khách lẻ',
+      phone: d.partner_id ? d.partner_id.phone : '',
+      remaining: d.remaining, // Số tiền còn nợ
+      dueDate: d.dueDate      // Hạn thanh toán
+    }));
 
     // Top sản phẩm
     const topProducts = await ExportReceipt.aggregate([
@@ -195,11 +204,7 @@ const getDashboardData = async (req, res) => {
         stockValueGrowth: stockValueGrowth.toFixed(1)
       },
       trend: revenueTrend,
-      debt: debtReminder.map(d => ({
-        customer: d.customer_id?.name || 'Khách lẻ',
-        remaining: d.total_amount - (d.paid_amount || 0),
-        dueDate: d.payment_due_date
-      })),
+      debt: formattedDebts,
       topProducts: topProducts.map(p => ({ name: p._id, value: p.value })),
       topCustomers
     });
