@@ -82,12 +82,6 @@ const createExport = async (req, res) => {
 
     const newCustomerPoints = (customer.saved_points || 0) + totalPointsChange;
 
-    if (newCustomerPoints < 0) {
-      return res.status(400).json({ 
-        message: `Khách không đủ điểm đổi quà! Hiện có: ${customer.saved_points}, Cần trừ: ${Math.abs(totalPointsChange)}` 
-      });
-    }
-
     // Lưu phiếu
     const code = await generateExportCode();
     const exportReceipt = new ExportReceipt({
