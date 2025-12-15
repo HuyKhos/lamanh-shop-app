@@ -116,7 +116,7 @@ const DebtPage = () => {
     }
     if (filterPaymentStatus !== 'all') {
         if (filterPaymentStatus === 'has_paid') result = result.filter(i => i.paid > 0);
-        else if (filterPaymentStatus === 'no_pay') result = result.filter(i => i.paid === 0);
+        else if (filterPaymentStatus === 'no_pay') result = result.filter(i => i.remaining > 0);
     }
     if (sortConfig.key) {
       result.sort((a, b) => {

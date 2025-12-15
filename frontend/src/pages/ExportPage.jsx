@@ -425,7 +425,28 @@ const ExportPage = () => {
   const handleDeleteExport = async (e, id, code) => { e.stopPropagation(); if (window.confirm(`Xóa phiếu ${code}?`)) { try { await axiosClient.delete(`/exports/${id}`); toast.success('Đã xóa'); triggerRefresh(['exports', 'products', 'debts', 'dashboard', 'partners']); fetchData(); } catch (error) { toast.error('Lỗi xóa: ' + error.message); } } };
   const handleRowClick = (item) => { setNewExport({ _id: item._id, code: item.code, customer_id: item.customer_id?._id || '', note: item.note || '', payment_due_date: toInputDate(item.payment_due_date), hide_price: item.hide_price || false, details: item.details || [], date: item.date, total_amount: item.total_amount, partner_points_snapshot: item.partner_points_snapshot }); const oldCustomer = customers.find(c => c._id === (item.customer_id?._id || item.customer_id)); setSelectedCustomerInfo(oldCustomer); setIsViewMode(true); setShowModal(true); };
   const handleCustomerChange = (customerId) => { const customer = customers.find(c => c._id === customerId); if (customer) { setSelectedCustomerInfo(customer); setNewExport(prev => ({ ...prev, customer_id: customerId, hide_price: customer.hide_price || false, apply_wholesale: customer.is_wholesale || false })); recalculatePrices(customer.is_wholesale || false); } else { setSelectedCustomerInfo(null); setNewExport(prev => ({ ...prev, customer_id: '', apply_wholesale: false })); } };
-  const recalculatePrices = (isWholesale) => { setNewExport(prev => { const newDetails = prev.details.map(item => { const product = products.find(p => p._id === item.product_id); if (!product) return item; let newPrice = product.export_price || 0; if (isWholesale) { const discount = product.discount_percent || 0; newPrice = newPrice * (1 - discount / 100); } return { ...item, export_price: Math.round(newPrice), total: Math.round(item.quantity * newPrice) }; }); return { ...prev, details: newDetails }; }); };
+  const recalculatePrices = (isWholesale) => { 
+    setNewExport(prev => { 
+        const newDetails = prev.details.map(item => { 
+            const product = products.find(p => p._id === item.product_id); 
+            if (!product) return item; 
+            
+            // --- SỬA ĐỔI ---
+            const originalPrice = product.export_price || 0;
+            
+            // Nếu là khách sỉ -> Lấy % từ DB. Khách lẻ -> 0%
+            const newDiscount = isWholesale ? (product.discount_percent || 0) : 0;
+            
+            return { 
+                ...item, 
+                export_price: originalPrice, // Luôn reset về giá gốc
+                discount: newDiscount,       // Cập nhật cột %
+                total: calculateLineTotal(item.quantity, originalPrice, newDiscount) // Tính lại tổng
+            }; 
+        }); 
+        return { ...prev, details: newDetails }; 
+    }); 
+  };
   const getPriceForProduct = (product) => { let price = product.export_price || 0; if (newExport.apply_wholesale) { const discount = product.discount_percent || 0; price = price * (1 - discount / 100); } return price; };
   
   // --- XỬ LÝ IMPORT EXCEL (MỚI) ---
@@ -520,24 +541,41 @@ const ExportPage = () => {
   };
 
   const addProductToExport = (product) => { 
-      if (product.current_stock <= 0) { return toast.error(`Sản phẩm ${product.name} đã hết hàng!`); } 
-      // SỬA: Math.round giá khi chọn sản phẩm
-      const finalPrice = Math.round(getPriceForProduct(product)); 
-      const newItem = { 
-          product_id: product._id, 
-          product_name_backup: product.name, 
-          sku: product.sku, 
-          unit: product.unit, 
-          quantity: 1, 
-          export_price: finalPrice, 
-          gift_points: product.gift_points || 0, 
-          total: Math.round(finalPrice) 
-      }; 
-      setNewExport({ ...newExport, details: [...newExport.details, newItem] }); 
-      setProductSearch(''); 
-      setFilteredProducts([]); 
-      setIsSearchFocus(true); 
-      setActiveIndex(-1); 
+    if (product.current_stock <= 0) { return toast.error(`Sản phẩm ${product.name} đã hết hàng!`); } 
+    
+    // --- SỬA ĐỔI: Lấy giá gốc và % giảm giá từ DB ---
+    
+    // 1. Luôn lấy giá gốc (không tự động trừ tiền ở đây nữa)
+    const originalPrice = product.export_price || 0; 
+    
+    // 2. Lấy % giảm giá từ DB (như trong ảnh của bạn là 6.25)
+    // Logic: Nếu khách sỉ (apply_wholesale) thì lấy % trong DB, nếu khách lẻ thì 0 (hoặc tùy bạn muốn luôn lấy)
+    let autoDiscount = 0;
+    if (newExport.apply_wholesale) {
+        autoDiscount = product.discount_percent || 0;
+    }
+    // Lưu ý: Nếu bạn muốn sản phẩm này LUÔN LUÔN giảm giá cho mọi khách, bỏ dòng if check ở trên đi.
+
+    const newItem = { 
+        product_id: product._id, 
+        product_name_backup: product.name, 
+        sku: product.sku, 
+        unit: product.unit, 
+        quantity: 1, 
+        export_price: originalPrice, // Giữ nguyên giá 175.500
+        gift_points: product.gift_points || 0,
+        
+        discount: autoDiscount, // <--- Tự động điền 6.25 vào đây
+        
+        // Tính thành tiền: Giá gốc * (1 - 6.25%)
+        total: calculateLineTotal(1, originalPrice, autoDiscount) 
+    }; 
+    
+    setNewExport({ ...newExport, details: [...newExport.details, newItem] }); 
+    setProductSearch(''); 
+    setFilteredProducts([]); 
+    setIsSearchFocus(true); 
+    setActiveIndex(-1); 
   };
 
   const updateDetail = (index, field, value) => {

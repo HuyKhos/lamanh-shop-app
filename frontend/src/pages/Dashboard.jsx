@@ -190,16 +190,26 @@ const Dashboard = () => {
               <AlertCircle size={18} className="text-red-500" /> Công nợ cần thu
             </h3>
             <div className="space-y-3 overflow-y-auto flex-1 max-h-64">
-              {data.debt.length === 0 ? <p className="text-gray-500 text-sm">Không có nợ đến hạn.</p> : 
-              data.debt.map((d, i) => (
-                <div key={i} className="flex justify-between items-center p-3 bg-red-50 rounded-lg border border-red-100">
-                  <div>
-                    <p className="font-bold text-sm text-gray-800">{d.customer}</p>
-                    <p className="text-xs text-gray-500">Hạn: {d.dueDate ? new Date(d.dueDate).toLocaleDateString('vi-VN') : '---'}</p>
-                  </div>
-                  <span className="font-bold text-red-600 text-sm">{d.remaining?.toLocaleString()} đ</span>
-                </div>
-              ))}
+              {/* BƯỚC LỌC TRỰC TIẾP TẠI FRONTEND */}
+              {data.debt.filter(d => d.remaining > 0).length === 0 ? (
+                <p className="text-gray-500 text-sm">Không có nợ đến hạn.</p> 
+              ) : (
+                data.debt
+                  .filter(d => d.remaining > 0) // <--- CHỈ HIỂN THỊ NẾU > 0
+                  .map((d, i) => (
+                    <div key={i} className="flex justify-between items-center p-3 bg-red-50 rounded-lg border border-red-100">
+                      <div>
+                        <p className="font-bold text-sm text-gray-800">{d.customer}</p>
+                        <p className="text-xs text-gray-500">
+                          Hạn: {d.dueDate ? new Date(d.dueDate).toLocaleDateString('vi-VN') : '---'}
+                        </p>
+                      </div>
+                      <span className="font-bold text-red-600 text-sm">
+                        {d.remaining?.toLocaleString()} đ
+                      </span>
+                    </div>
+                ))
+              )}
             </div>
           </div>
 
