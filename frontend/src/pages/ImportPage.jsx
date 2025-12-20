@@ -10,6 +10,7 @@ import axiosClient from '../api/axiosClient';
 import { toast } from 'react-toastify';
 import * as XLSX from 'xlsx';
 import Select from 'react-select';
+import { v4 as uuidv4 } from 'uuid';
 
 const ImportPage = () => {
   const { isExpanded, setIsExpanded } = useOutletContext();
@@ -46,6 +47,15 @@ const ImportPage = () => {
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [isSearchFocus, setIsSearchFocus] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+  // --- STATE IDEMPOTENCY ---
+  const [idempotencyKey, setIdempotencyKey] = useState(uuidv4());
+
+  // Tạo key mới khi mở modal
+  useEffect(() => {
+      if (showModal && !isViewMode) {
+          setIdempotencyKey(uuidv4());
+      }
+  }, [showModal, isViewMode]);
 
   const searchInputRef = useRef(null); 
   const listRef = useRef(null); 
@@ -173,7 +183,11 @@ const ImportPage = () => {
     if (window.confirm('Xóa hết dữ liệu đang nhập để tạo phiếu mới?')) {
         setNewImport(INITIAL_IMPORT_STATE);
         localStorage.removeItem(DRAFT_KEY);
+        
+        setIdempotencyKey(uuidv4()); // <--- THÊM: Tạo key mới
+        
         const fetchNewCode = async () => {
+            // ... giữ nguyên logic cũ ...
             try {
               const res = await axiosClient.get('/imports/new-code');
               setNewImport(prev => ({ ...prev, code: res.code }));
@@ -453,11 +467,14 @@ const ImportPage = () => {
 
     try {
       setIsSubmitting(true);
+      
       const payload = {
         ...newImport,
         total_amount: calculateTotalAmount(),
-        total_quantity: calculateTotalQuantity()
+        total_quantity: calculateTotalQuantity(),
+        idempotency_key: idempotencyKey // <--- THÊM DÒNG NÀY
       };
+
       await axiosClient.post('/imports', payload);
       
       localStorage.removeItem(DRAFT_KEY);
@@ -465,9 +482,13 @@ const ImportPage = () => {
       toast.success('Nhập kho thành công! 🎉');
       triggerRefresh(['exports', 'products', 'debts', 'dashboard', 'partners']);
       setNewImport(INITIAL_IMPORT_STATE);
+      
+      setIdempotencyKey(uuidv4()); // <--- Reset key sau khi thành công
+      
       handleCloseModal();
-      fetchData(); 
+      fetchData();
     } catch (error) {
+      // Giữ nguyên key nếu lỗi để retry
       toast.error('Lỗi: ' + (error.response?.data?.message || error.message));
     } finally {
       setIsSubmitting(false);

@@ -18,11 +18,14 @@ const exportSchema = new mongoose.Schema({
   // Lưu tổng điểm của khách hàng NGAY TẠI THỜI ĐIỂM CHỐT ĐƠN
   partner_points_snapshot: { type: Number, default: 0 },
 
-  // --- CẬP NHẬT PHẦN NÀY ---
+  // --- CẬP NHẬT MỚI: KHÓA CHỐNG TRÙNG LẶP ---
+  idempotency_key: { type: String, required: true, unique: true, index: true },
+  // ------------------------------------------
+
   details: [{
     product_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
     
-    // BỔ SUNG CÁC TRƯỜNG CÒN THIẾU:
+    // GIỮ NGUYÊN CODE CŨ CỦA BẠN
     sku: String,          // Mã SP
     unit: String,         // Đơn vị
     gift_points: Number,  // <--- QUAN TRỌNG: Lưu điểm vào đây

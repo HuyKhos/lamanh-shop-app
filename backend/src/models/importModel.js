@@ -13,11 +13,16 @@ const importSchema = new mongoose.Schema({
   total_amount: { type: Number, required: true },
   note: { type: String },
 
-  // --- CẬP NHẬT PHẦN NÀY ---
+  // --- CẬP NHẬT MỚI: KHÓA CHỐNG TRÙNG LẶP ---
+  // unique: true -> Đảm bảo không bao giờ có 2 phiếu cùng key này
+  // sparse: true -> (Tùy chọn) Để các phiếu cũ (chưa có key) không bị lỗi duplicate null
+  idempotency_key: { type: String, required: true, unique: true, index: true }, 
+  // ------------------------------------------
+
   details: [{
     product_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
     
-    // BỔ SUNG 2 DÒNG NÀY ĐỂ LƯU ĐƯỢC MÃ VÀ ĐƠN VỊ
+    // GIỮ NGUYÊN CODE CŨ CỦA BẠN
     sku: { type: String }, 
     unit: { type: String },
 

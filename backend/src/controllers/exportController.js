@@ -1,110 +1,78 @@
+import mongoose from 'mongoose'; // Cần thêm để dùng session
 import ExportReceipt from '../models/exportModel.js';
 import Product from '../models/productModel.js';
 import DebtRecord from '../models/debtModel.js';
 import Partner from '../models/partnerModel.js';
 import Counter from '../models/counterModel.js';
 
-// --- 1. HÀM SINH MÃ TỰ ĐỘNG (GIỮ NGUYÊN) ---
+// --- 1. HÀM SINH MÃ TỰ ĐỘNG ---
 export const generateExportCode = async () => {
   const now = new Date();
   const dateInVietnam = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
-  
-  const year = dateInVietnam.getFullYear().toString().slice(-2);
-  const month = String(dateInVietnam.getMonth() + 1).padStart(2, '0');
-  const day = String(dateInVietnam.getDate()).padStart(2, '0');
-  const dateStr = `${year}${month}${day}`; 
+  const dateStr = `${dateInVietnam.getFullYear().toString().slice(-2)}${String(dateInVietnam.getMonth() + 1).padStart(2, '0')}${String(dateInVietnam.getDate()).padStart(2, '0')}`; 
   
   const counterId = `export_${dateStr}`;
-
   const counter = await Counter.findByIdAndUpdate(
     counterId,
     { $inc: { seq: 1 } },
     { new: true, upsert: true, setDefaultsOnInsert: true }
   );
 
-  const sequence = counter ? counter.seq : 1;
-  return `XK-${dateStr}-${String(sequence).padStart(3, '0')}`;
+  return `XK-${dateStr}-${String(counter.seq).padStart(3, '0')}`;
 };
 
-// --- 2. API LẤY MÃ MỚI CHO FRONTEND (GIỮ NGUYÊN) ---
-const getNewExportCode = async (req, res) => {
-  try {
-    const now = new Date();
-    const dateInVietnam = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
-    
-    const year = dateInVietnam.getFullYear().toString().slice(-2);
-    const month = String(dateInVietnam.getMonth() + 1).padStart(2, '0');
-    const day = String(dateInVietnam.getDate()).padStart(2, '0');
-    const dateStr = `${year}${month}${day}`;
-    
-    const counterId = `export_${dateStr}`;
-    
-    const counter = await Counter.findByIdAndUpdate(
-      counterId,
-      { $setOnInsert: { seq: 0 } },
-      { new: true, upsert: true }
-    );
-    
-    const nextSeq = counter.seq + 1;
-    const newCode = `XK-${dateStr}-${String(nextSeq).padStart(3, '0')}`;
-    
-    res.json({ code: newCode });
-  } catch (error) {
-    res.status(500).json({ message: "Lỗi sinh mã: " + error.message });
-  }
-};
-
-// --- 3. TẠO PHIẾU XUẤT (GIỮ NGUYÊN) ---
+// --- 2. TẠO PHIẾU XUẤT (Cập nhật: Transaction & Atomic) ---
 const createExport = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
-    const { customer_id, details, total_amount, note, payment_due_date} = req.body;
+    // 1. Nhận thêm idempotency_key từ Frontend
+    const { customer_id, details, total_amount, note, payment_due_date, idempotency_key } = req.body;
 
-    if (!details || details.length === 0) return res.status(400).json({ message: 'Giỏ hàng rỗng' });
+    // Kiểm tra bắt buộc phải có key này
+    if (!idempotency_key) {
+      throw new Error("Thiếu khóa bảo mật (idempotency_key). Vui lòng tải lại trang.");
+    }
 
-    // Tính tổng điểm phát sinh
+    if (!details || details.length === 0) throw new Error('Giỏ hàng rỗng');
+
     let totalPointsChange = 0;
-    
-    // Kiểm tra tồn kho và Tính điểm
+
+    // --- XỬ LÝ KHO & ĐIỂM (Giữ nguyên logic cũ) ---
     for (const item of details) {
-      const product = await Product.findById(item.product_id);
-      if (!product) return res.status(404).json({ message: 'Sản phẩm không tồn tại' });
-      
-      if (product.current_stock < item.quantity) {
-        return res.status(400).json({ message: `Sản phẩm ${product.name} không đủ hàng (Tồn: ${product.current_stock})` });
-      }
-      
+      const productUpdate = await Product.findOneAndUpdate(
+        { _id: item.product_id, current_stock: { $gte: item.quantity } },
+        { $inc: { current_stock: -item.quantity } },
+        { session, new: true }
+      );
+      if (!productUpdate) throw new Error(`Sản phẩm ID ${item.product_id} không đủ hàng.`);
       totalPointsChange += (item.gift_points || 0) * item.quantity;
     }
 
-    // Kiểm tra khách hàng
-    const customer = await Partner.findById(customer_id);
-    if (!customer) return res.status(404).json({ message: 'Khách hàng không tồn tại' });
+    const updatedCustomer = await Partner.findByIdAndUpdate(
+      customer_id,
+      { $inc: { current_debt: total_amount, saved_points: totalPointsChange } },
+      { session, new: true }
+    );
+    if (!updatedCustomer) throw new Error('Khách hàng không tồn tại');
 
-    const newCustomerPoints = (customer.saved_points || 0) + totalPointsChange;
-
-    // Lưu phiếu
+    // --- LƯU PHIẾU (QUAN TRỌNG: Thêm idempotency_key) ---
     const code = await generateExportCode();
     const exportReceipt = new ExportReceipt({
       code, 
       customer_id, 
       total_amount, 
-      note,
-      details,
+      note, 
+      details, 
       payment_due_date,
-      partner_points_snapshot: newCustomerPoints 
+      partner_points_snapshot: updatedCustomer.saved_points,
+      idempotency_key // <--- Lưu vào đây
     });
-    const savedExport = await exportReceipt.save();
+    
+    await exportReceipt.save({ session });
 
-    // Trừ kho
-    for (const item of details) {
-      const product = await Product.findById(item.product_id);
-      if (product) {
-        product.current_stock = product.current_stock - item.quantity;
-        await product.save();
-      }
-    }
-
-    // Ghi nợ
+    // --- GHI NỢ (Giữ nguyên) ---
     const debt = new DebtRecord({
       partner_id: customer_id,
       reference_code: code,
@@ -112,95 +80,108 @@ const createExport = async (req, res) => {
       remaining_amount: total_amount,
       dueDate: payment_due_date,
     });
-    await debt.save();
+    await debt.save({ session });
 
-    // Cập nhật Nợ và Điểm cho khách
-    customer.current_debt = customer.current_debt + total_amount;
-    customer.saved_points = newCustomerPoints;
-    await customer.save();
-
-    res.status(201).json({ receipt: savedExport, message: 'Xuất kho thành công!' });
+    await session.commitTransaction();
+    res.status(201).json({ receipt: exportReceipt, message: 'Xuất kho thành công!' });
 
   } catch (error) {
-    res.status(500).json({ message: 'Lỗi: ' + error.message });
+    await session.abortTransaction();
+
+    // --- BẮT LỖI TRÙNG LẶP (DUPLICATE KEY) ---
+    // Mã lỗi 11000 là mã đặc trưng của MongoDB khi vi phạm unique index
+    if (error.code === 11000 && error.keyPattern && error.keyPattern.idempotency_key) {
+      return res.status(409).json({ 
+        message: 'Giao dịch này đã được xử lý thành công trước đó (Trùng lặp thao tác).' 
+      });
+    }
+
+    res.status(400).json({ message: 'Lỗi tạo phiếu: ' + error.message });
+  } finally {
+    session.endSession();
   }
 };
 
-// --- 4. LẤY DANH SÁCH (GIỮ NGUYÊN) ---
+// --- 3. XÓA PHIẾU (Cập nhật: Transaction & Atomic) ---
+const deleteExport = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const receipt = await ExportReceipt.findById(req.params.id).session(session);
+    if (!receipt) throw new Error('Không tìm thấy phiếu');
+
+    // 1. Hoàn lại kho (Atomic)
+    for (const item of receipt.details) {
+      await Product.findByIdAndUpdate(
+        item.product_id,
+        { $inc: { current_stock: item.quantity } },
+        { session }
+      );
+    }
+
+    // 2. Tính lại điểm cần hoàn
+    let pointsToRevert = 0;
+    for (const item of receipt.details) {
+      pointsToRevert += (item.gift_points || 0) * item.quantity;
+    }
+
+    // 3. Hoàn lại Nợ và Điểm cho khách (Atomic)
+    await Partner.findByIdAndUpdate(
+      receipt.customer_id,
+      { 
+        $inc: { 
+          current_debt: -receipt.total_amount, 
+          saved_points: -pointsToRevert 
+        } 
+      },
+      { session }
+    );
+
+    // 4. Xóa ghi nợ và phiếu
+    await DebtRecord.deleteOne({ reference_code: receipt.code }).session(session);
+    await ExportReceipt.deleteOne({ _id: receipt._id }).session(session);
+
+    await session.commitTransaction();
+    res.json({ message: 'Đã xóa phiếu, hoàn kho và điểm thành công.' });
+
+  } catch (error) {
+    await session.abortTransaction();
+    res.status(500).json({ message: 'Lỗi xóa phiếu: ' + error.message });
+  } finally {
+    session.endSession();
+  }
+};
+
+// --- GIỮ NGUYÊN CÁC HÀM KHÁC ---
 const getExports = async (req, res) => {
   try {
-    const exports = await ExportReceipt.find({})
-      .populate('customer_id', 'name phone address saved_points') // Populate thêm saved_points để frontend dùng nếu cần
-      .sort({ createdAt: -1 });
+    const exports = await ExportReceipt.find({}).populate('customer_id', 'name phone address saved_points').sort({ createdAt: -1 });
     res.json(exports);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+  } catch (error) { res.status(500).json({ message: error.message }); }
 };
 
-// --- 5. CẬP NHẬT GHI CHÚ (GIỮ NGUYÊN) ---
 const updateExport = async (req, res) => {
   try {
     const { note, hide_price } = req.body;
-    const receipt = await ExportReceipt.findById(req.params.id);
-
-    if (receipt) {
-      receipt.note = note !== undefined ? note : receipt.note;
-      receipt.hide_price = hide_price !== undefined ? hide_price : receipt.hide_price;
-      
-      const updatedReceipt = await receipt.save();
-      res.json(updatedReceipt);
-    } else {
-      res.status(404).json({ message: 'Không tìm thấy phiếu' });
-    }
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+    const receipt = await ExportReceipt.findByIdAndUpdate(
+      req.params.id,
+      { $set: { note, hide_price } },
+      { new: true }
+    );
+    receipt ? res.json(receipt) : res.status(404).json({ message: 'Không tìm thấy phiếu' });
+  } catch (error) { res.status(500).json({ message: error.message }); }
 };
 
-// --- 6. XÓA PHIẾU (ĐÃ CẬP NHẬT LOGIC HOÀN ĐIỂM) ---
-const deleteExport = async (req, res) => {
+const getNewExportCode = async (req, res) => {
   try {
-    const receipt = await ExportReceipt.findById(req.params.id);
-    if (!receipt) return res.status(404).json({ message: 'Không tìm thấy phiếu' });
-
-    // A. Hoàn lại kho (Cộng lại số lượng)
-    for (const item of receipt.details) {
-      const product = await Product.findById(item.product_id);
-      if (product) {
-        product.current_stock = product.current_stock + item.quantity;
-        await product.save();
-      }
-    }
-
-    // B. Xử lý Khách hàng (Trừ nợ & Hoàn điểm)
-    const customer = await Partner.findById(receipt.customer_id);
-    if (customer) {
-      // 1. Trừ nợ
-      customer.current_debt = customer.current_debt - receipt.total_amount;
-
-      // 2. Hoàn điểm (Logic mới thêm vào)
-      // Tính tổng điểm của phiếu này
-      let pointsToRevert = 0;
-      for (const item of receipt.details) {
-          pointsToRevert += (item.gift_points || 0) * item.quantity;
-      }
-      
-      // Lúc tạo phiếu ta CỘNG điểm, thì giờ xóa phiếu ta phải TRỪ điểm
-      // (Nếu là phiếu đổi quà có điểm âm, thì trừ số âm sẽ thành cộng lại => Logic vẫn đúng)
-      customer.saved_points = (customer.saved_points || 0) - pointsToRevert;
-
-      await customer.save();
-    }
-
-    // C. Xóa ghi nợ và Xóa phiếu
-    await DebtRecord.deleteOne({ reference_code: receipt.code });
-    await receipt.deleteOne();
-
-    res.json({ message: 'Đã xóa phiếu, hoàn kho và cập nhật lại điểm.' });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+    const now = new Date();
+    const dateInVietnam = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
+    const dateStr = `${dateInVietnam.getFullYear().toString().slice(-2)}${String(dateInVietnam.getMonth() + 1).padStart(2, '0')}${String(dateInVietnam.getDate()).padStart(2, '0')}`;
+    const counterId = `export_${dateStr}`;
+    const counter = await Counter.findOneAndUpdate({ _id: counterId }, { $setOnInsert: { seq: 0 } }, { new: true, upsert: true });
+    res.json({ code: `XK-${dateStr}-${String(counter.seq + 1).padStart(3, '0')}` });
+  } catch (error) { res.status(500).json({ message: "Lỗi sinh mã: " + error.message }); }
 };
 
 export { createExport, getExports, updateExport, deleteExport, getNewExportCode };

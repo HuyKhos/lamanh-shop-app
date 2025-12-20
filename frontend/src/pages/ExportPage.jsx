@@ -13,6 +13,7 @@ import { toast } from 'react-toastify';
 import * as XLSX from 'xlsx-js-style';
 import html2canvas from 'html2canvas'; 
 import Select from 'react-select';
+import { v4 as uuidv4 } from 'uuid';
 
 const ExportPage = () => {
   const { isExpanded, setIsExpanded } = useOutletContext();
@@ -52,6 +53,14 @@ const ExportPage = () => {
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [isSearchFocus, setIsSearchFocus] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+  // --- STATE IDEMPOTENCY (CHỐNG TRÙNG LẶP) ---
+  const [idempotencyKey, setIdempotencyKey] = useState(uuidv4());
+  // Mỗi khi mở Modal để tạo mới, sinh ra một Key mới
+  useEffect(() => {
+    if (showModal && !isViewMode) {
+        setIdempotencyKey(uuidv4());
+    }
+  }, [showModal, isViewMode]);
 
   // Utils
   const formatCurrency = (amount) => {
@@ -123,6 +132,9 @@ const ExportPage = () => {
         setSelectedCustomerInfo(null);
         localStorage.removeItem(DRAFT_KEY);
         localStorage.removeItem(DRAFT_CUSTOMER_KEY);
+        
+        setIdempotencyKey(uuidv4()); // <--- THÊM: Tạo key mới khi reset
+        
         fetchNewCode();
         toast.info('Đã làm mới form');
     }
@@ -398,9 +410,17 @@ const ExportPage = () => {
     if (!newExport.customer_id) return toast.warning('Chọn Khách hàng');
     if (newExport.details.length === 0) return toast.warning('Chưa có sản phẩm');
     if (isSubmitting) return;
+
     try { 
         setIsSubmitting(true); 
-        const payload = { ...newExport, total_amount: calculateTotalAmount() }; 
+        
+        // Gửi kèm idempotency_key
+        const payload = { 
+            ...newExport, 
+            total_amount: calculateTotalAmount(),
+            idempotency_key: idempotencyKey // <--- THÊM DÒNG NÀY
+        };
+
         await axiosClient.post('/exports', payload);
         
         localStorage.removeItem(DRAFT_KEY);
@@ -411,11 +431,16 @@ const ExportPage = () => {
         
         setNewExport(INITIAL_EXPORT_STATE);
         setSelectedCustomerInfo(null);
+        
+        // Lưu thành công rồi thì tạo Key mới cho lần sau
+        setIdempotencyKey(uuidv4()); 
 
         handleCloseModal();
-        fetchData(); 
+        fetchData();
     } catch (error) { 
-        toast.error('Lỗi: ' + (error.response?.data?.message || error.message)); 
+        // QUAN TRỌNG: Nếu lỗi, KHÔNG tạo key mới. 
+        // Để người dùng bấm "Lưu" lại, Server sẽ biết là request cũ gửi lại.
+        toast.error('Lỗi: ' + (error.response?.data?.message || error.message));
     } finally { 
         setIsSubmitting(false); 
     }
