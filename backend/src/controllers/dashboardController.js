@@ -40,7 +40,7 @@ const getDashboardData = async (req, res) => {
     if (revenueLastMonth > 0) {
         revenueGrowth = ((revenueThisMonth - revenueLastMonth) / revenueLastMonth) * 100;
     } else if (revenueThisMonth > 0) {
-        revenueGrowth = 100; 
+        revenueGrowth = 100;
     }
 
     // ======================================================
@@ -48,7 +48,14 @@ const getDashboardData = async (req, res) => {
     // ======================================================
 
     const profitPipeline = (matchStage) => [
-      { $match: matchStage },
+      // --- SỬA ĐỔI: Thêm điều kiện total_amount > 0 ---
+      { 
+        $match: { 
+          ...matchStage, 
+          total_amount: { $gt: 0 } // Chỉ tính lợi nhuận cho các đơn có doanh thu (bỏ qua đơn 0đ)
+        } 
+      },
+      // -----------------------------------------------
       { $unwind: "$details" },
       {
         $lookup: {
@@ -109,7 +116,7 @@ const getDashboardData = async (req, res) => {
           { $group: { _id: null, total: { $sum: "$total_amount" } } }
       ])
     ]);
-    
+
     const stockValueThisMonth = inventoryData[0]?.total || 0;
 
     // --- Tính toán tăng trưởng Đơn hàng ---
@@ -151,19 +158,16 @@ const getDashboardData = async (req, res) => {
     ]);
 
     // --- 5. Lấy danh sách Công nợ (ĐÃ TỐI ƯU) ---
-    // Chỉ lấy nợ dương (> 0), sắp xếp hạn thanh toán tăng dần (ai hết hạn trước hiện trước)
-    // Giới hạn 20 dòng để Dashboard nhẹ
+    // Chỉ lấy nợ dương (> 0), sắp xếp hạn thanh toán tăng dần
     const debtList = await DebtRecord.find({
-      // Chỉ lấy những bản ghi có amount tồn tại
       amount: { $exists: true } 
    })
    .populate('partner_id', 'name phone')
-   .sort({ dueDate: 1 }); // Sắp xếp hạn
+   .sort({ dueDate: 1 });
 
-   // Bước 2: Map và Lọc bằng Javascript (Chính xác tuyệt đối)
+   // Bước 2: Map và Lọc bằng Javascript
    const formattedDebts = debtList
      .map(d => {
-       // Tính toán số còn lại: Nếu không có paid_amount thì coi như bằng 0
        const paid = d.paid_amount || 0;
        const remainingCalc = d.amount - paid;
        
@@ -175,9 +179,7 @@ const getDashboardData = async (req, res) => {
          dueDate: d.dueDate
        };
      })
-     // [QUAN TRỌNG] Lọc bỏ những dòng <= 0 hoặc sai số nhỏ (< 1000đ)
      .filter(item => item.remaining > 0)
-     // Lấy 20 dòng đầu tiên sau khi đã lọc sạch
      .slice(0, 20);
 
     // Top sản phẩm
@@ -233,7 +235,6 @@ const getDashboardNote = async (req, res) => {
   try {
     let noteConfig = await Config.findOne({ key: 'dashboard_note' });
     if (!noteConfig) {
-      // Nếu chưa có thì tạo mới rỗng
       noteConfig = await Config.create({ key: 'dashboard_note', value: '' });
     }
     res.json({ note: noteConfig.value });
@@ -249,7 +250,7 @@ const saveDashboardNote = async (req, res) => {
     const updatedConfig = await Config.findOneAndUpdate(
       { key: 'dashboard_note' },
       { value: note },
-      { new: true, upsert: true } // upsert: nếu chưa có thì tạo mới
+      { new: true, upsert: true }
     );
     res.json({ success: true, note: updatedConfig.value });
   } catch (error) {

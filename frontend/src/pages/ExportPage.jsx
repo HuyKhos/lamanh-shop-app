@@ -797,6 +797,9 @@ const handleKeyDown = (e) => {
                       <div>{formatCurrency(item.total_amount)}₫</div>
                       
                       {(() => {
+                          if (item.total_amount === 0) {
+                            return <div className="text-xs text-gray-400 mt-1 italic font-normal">---</div>;
+                          }
                           // Cách 1: Ưu tiên lấy tổng lãi ĐÃ LƯU trong DB (Nhanh, Chính xác)
                           let profit = item.details.reduce((sum, d) => sum + (d.profit || 0), 0);
 
