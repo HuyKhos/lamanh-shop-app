@@ -2,10 +2,8 @@ import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import https from 'https';
-import path from 'path'; // <--- MỚI: Import path
-import { fileURLToPath } from 'url'; // <--- MỚI: Import để xử lý đường dẫn
-
 import connectDB from './config/database.js';
+
 import productRoutes from './routes/productRoutes.js';
 import importRoutes from './routes/importRoutes.js';
 import exportRoutes from './routes/exportRoutes.js';
@@ -16,15 +14,15 @@ import dashboardRoutes from './routes/dashboardRoutes.js';
 dotenv.config();
 connectDB();
 
-// --- MỚI: Cấu hình __dirname cho ES Modules ---
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-// ----------------------------------------------
-
 const app = express();
 
 app.use(express.json());
-app.use(cors());
+
+// --- CẤU HÌNH CORS (QUAN TRỌNG) ---
+// Cho phép Frontend (Firebase) gọi API của Backend (Render)
+// Để an toàn, sau này bạn nên thay '*' bằng domain Firebase của bạn
+// Ví dụ: app.use(cors({ origin: 'https://lamanh-shop.web.app' }));
+app.use(cors()); 
 
 // --- Cấu hình Keep-Alive cho Render ---
 const APP_URL = 'https://lamanh-shop-backend.onrender.com'; 
@@ -41,30 +39,24 @@ const keepAlive = () => {
     });
 };
 
+// Ping mỗi 10 phút
 setInterval(keepAlive, 600000); 
 // --------------------------------------
 
 // Đăng ký API Routes
 app.use('/api/products', productRoutes);
 app.use('/api/imports', importRoutes);
-app.use('/api/exports', exportRoutes);
+app.use('/api/exports', exportRoutes); // [cite: 1, 2, 3]
 app.use('/api/partners', partnerRoutes);
 app.use('/api/debts', debtRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
-// --- QUAN TRỌNG: Cấu hình Frontend (React) ---
-
-// 1. Chỉ định thư mục chứa code React đã build (folder 'dist')
-// Lưu ý: Kiểm tra xem folder build của bạn tên là 'dist' hay 'build'
-// Giả sử cấu trúc thư mục là: root -> backend (server.js) và root -> client (React)
-app.use(express.static(path.join(__dirname, '../client/dist'))); 
-
-// 2. Catch-all route: Bắt mọi request không phải API để trả về index.html
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../client/dist/index.html'));
+// --- ROUTE TRANG CHỦ CỦA BACKEND ---
+// Khi bạn truy cập link Render, nó sẽ hiện dòng này để biết Server còn sống
+// Server KHÔNG phục vụ file index.html của React nữa
+app.get('/', (req, res) => {
+    res.send('<h1>API Server is running...</h1><p>Please access the website via Firebase URL.</p>');
 });
-
-// ---------------------------------------------
 
 const PORT = process.env.PORT || 5001;
 app.listen(PORT, () => {
