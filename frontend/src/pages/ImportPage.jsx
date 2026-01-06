@@ -136,58 +136,71 @@ const ImportPage = () => {
   // --- LOGIC FORM: LƯU NHÁP & KHÔI PHỤC (Local Storage) ---
   const DRAFT_KEY = 'import_draft_data';
 
+  // 1. Lưu nháp (CHỈ LƯU SẢN PHẨM)
   useEffect(() => {
     if (showModal && !isViewMode) {
-       if (newImport.supplier_id || newImport.details.length > 0) {
-           localStorage.setItem(DRAFT_KEY, JSON.stringify(newImport));
+       // Chỉ lưu khi có sản phẩm trong giỏ
+       if (newImport.details.length > 0) {
+           const draftData = { details: newImport.details };
+           localStorage.setItem(DRAFT_KEY, JSON.stringify(draftData));
+       } else {
+           // Nếu giỏ hàng trống thì xóa nháp cũ đi
+           localStorage.removeItem(DRAFT_KEY);
        }
     }
-  }, [newImport, showModal, isViewMode]);
+  }, [newImport.details, showModal, isViewMode]);
 
+  // 2. Khôi phục
   useEffect(() => {
     if (showModal && !isViewMode) {
-      const savedDraft = localStorage.getItem(DRAFT_KEY);
-      if (savedDraft) {
+      // Reset trạng thái ban đầu và hiện 'Đang tải...'
+      setNewImport(prev => ({ ...INITIAL_IMPORT_STATE, code: 'Đang tải...' }));
+      setProductSearch('');
+      setFilteredProducts([]);
+      setIsSubmitting(false);
+
+      const initForm = async () => {
          try {
-             const parsedDraft = JSON.parse(savedDraft);
-             if (parsedDraft.supplier_id || parsedDraft.details.length > 0) {
-                 setNewImport(parsedDraft);
-                 setProductSearch('');
-                 setFilteredProducts([]);
-                 setIsSubmitting(false);
-                 toast.info('Đã khôi phục phiếu nhập đang soạn dở', { autoClose: 1000 });
-                 return;
+             // Luôn lấy mã phiếu mới từ API
+             const res = await axiosClient.get('/imports/new-code');
+             
+             // Tạo state mới với mã vừa lấy
+             let nextState = { ...INITIAL_IMPORT_STATE, code: res.code };
+
+             // Kiểm tra và khôi phục sản phẩm nháp (nếu có)
+             const savedDraft = localStorage.getItem(DRAFT_KEY);
+             if (savedDraft) {
+                 try {
+                     const parsedDraft = JSON.parse(savedDraft);
+                     if (parsedDraft.details && parsedDraft.details.length > 0) {
+                         nextState.details = parsedDraft.details;
+                         toast.info('Đã khôi phục danh sách sản phẩm nháp', { autoClose: 2000 });
+                     }
+                 } catch (e) { localStorage.removeItem(DRAFT_KEY); }
              }
-         } catch (e) { localStorage.removeItem(DRAFT_KEY); }
-      }
+             
+             setNewImport(nextState);
+         } catch (error) { 
+             console.error(error); 
+         }
+      };
       
-      const isDraftCurrent = newImport.supplier_id || newImport.details.length > 0;
-      if (!isDraftCurrent) {
-          setNewImport({ ...INITIAL_IMPORT_STATE, code: 'Đang tải mã...' });
-          setProductSearch('');
-          setFilteredProducts([]);
-          setIsSubmitting(false);
-          
-          const fetchNewCode = async () => {
-             try {
-               const res = await axiosClient.get('/imports/new-code');
-               setNewImport(prev => ({ ...prev, code: res.code }));
-             } catch (error) { console.error(error); }
-          };
-          fetchNewCode();
-      }
+      initForm();
     }
   }, [showModal, isViewMode]);
 
   const handleResetForm = () => {
     if (window.confirm('Xóa hết dữ liệu đang nhập để tạo phiếu mới?')) {
-        setNewImport(INITIAL_IMPORT_STATE);
+        // Xóa bộ nhớ đệm
         localStorage.removeItem(DRAFT_KEY);
         
-        setIdempotencyKey(uuidv4()); // <--- THÊM: Tạo key mới
+        // Tạo key chống trùng lặp mới
+        setIdempotencyKey(uuidv4());
+        
+        // Reset state và lấy mã mới
+        setNewImport(prev => ({ ...INITIAL_IMPORT_STATE, code: 'Đang tải...' }));
         
         const fetchNewCode = async () => {
-            // ... giữ nguyên logic cũ ...
             try {
               const res = await axiosClient.get('/imports/new-code');
               setNewImport(prev => ({ ...prev, code: res.code }));
