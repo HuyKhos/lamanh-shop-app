@@ -1,7 +1,10 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
-import https from 'https'; // --- MỚI THÊM: Import thư viện https ---
+import https from 'https';
+import path from 'path'; // <--- MỚI: Import path
+import { fileURLToPath } from 'url'; // <--- MỚI: Import để xử lý đường dẫn
+
 import connectDB from './config/database.js';
 import productRoutes from './routes/productRoutes.js';
 import importRoutes from './routes/importRoutes.js';
@@ -13,15 +16,19 @@ import dashboardRoutes from './routes/dashboardRoutes.js';
 dotenv.config();
 connectDB();
 
+// --- MỚI: Cấu hình __dirname cho ES Modules ---
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+// ----------------------------------------------
+
 const app = express();
 
 app.use(express.json());
 app.use(cors());
 
-// --- MỚI THÊM: Cấu hình Keep-Alive cho Render ---
-const APP_URL = 'https://lamanh-shop-backend.onrender.com'; // URL Render của bạn
+// --- Cấu hình Keep-Alive cho Render ---
+const APP_URL = 'https://lamanh-shop-backend.onrender.com'; 
 
-// Hàm ping server
 const keepAlive = () => {
     https.get(APP_URL, (res) => {
         if (res.statusCode === 200) {
@@ -34,12 +41,10 @@ const keepAlive = () => {
     });
 };
 
-// Thiết lập chu kỳ ping: 10 phút (Render ngủ sau 15 phút)
-// 10 * 60 * 1000 = 600000 ms
 setInterval(keepAlive, 600000); 
-// ----------------------------------------------------
+// --------------------------------------
 
-// Đăng ký đường dẫn
+// Đăng ký API Routes
 app.use('/api/products', productRoutes);
 app.use('/api/imports', importRoutes);
 app.use('/api/exports', exportRoutes);
@@ -47,14 +52,21 @@ app.use('/api/partners', partnerRoutes);
 app.use('/api/debts', debtRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
-app.get('/', (req, res) => {
-  res.send('API Backend của Lâm Anh Shop đang chạy ngon lành!');
+// --- QUAN TRỌNG: Cấu hình Frontend (React) ---
+
+// 1. Chỉ định thư mục chứa code React đã build (folder 'dist')
+// Lưu ý: Kiểm tra xem folder build của bạn tên là 'dist' hay 'build'
+// Giả sử cấu trúc thư mục là: root -> backend (server.js) và root -> client (React)
+app.use(express.static(path.join(__dirname, '../client/dist'))); 
+
+// 2. Catch-all route: Bắt mọi request không phải API để trả về index.html
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../client/dist/index.html'));
 });
+
+// ---------------------------------------------
 
 const PORT = process.env.PORT || 5001;
 app.listen(PORT, () => {
   console.log(`Server đang chạy ở chế độ ${process.env.NODE_ENV} trên cổng ${PORT}`);
-  
-  // Gọi keepAlive ngay lập tức khi server khởi động để kiểm tra kết nối (tùy chọn)
-  // keepAlive(); 
 });
