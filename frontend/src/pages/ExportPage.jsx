@@ -84,57 +84,73 @@ const ExportPage = () => {
 
   // --- LOGIC FORM: LƯU NHÁP & KHÔI PHỤC (Local Storage) ---
   const DRAFT_KEY = 'export_draft_data';
-  const DRAFT_CUSTOMER_KEY = 'export_draft_customer';
+  // Xóa bỏ dòng DRAFT_CUSTOMER_KEY vì không dùng nữa
 
-  // 1. Lưu nháp
+  // 1. Lưu nháp (CHỈ LƯU SẢN PHẨM & SỐ LƯỢNG)
   useEffect(() => {
     if (showModal && !isViewMode) {
-       if (newExport.customer_id || newExport.details.length > 0) {
-           localStorage.setItem(DRAFT_KEY, JSON.stringify(newExport));
-           if (selectedCustomerInfo) {
-               localStorage.setItem(DRAFT_CUSTOMER_KEY, JSON.stringify(selectedCustomerInfo));
-           }
+       // Chỉ lưu khi có sản phẩm trong giỏ
+       if (newExport.details.length > 0) {
+           // Tạo object chỉ chứa danh sách sản phẩm
+           const draftData = {
+               details: newExport.details 
+           };
+           localStorage.setItem(DRAFT_KEY, JSON.stringify(draftData));
+       } else {
+           // Nếu giỏ hàng trống thì xóa nháp cũ đi (để tránh hiện lại rác cũ)
+           localStorage.removeItem(DRAFT_KEY);
        }
+       
+       // Xóa bỏ phần lưu selectedCustomerInfo
+       localStorage.removeItem('export_draft_customer'); // Dọn dẹp dữ liệu cũ nếu có
     }
-  }, [newExport, selectedCustomerInfo, showModal, isViewMode]);
+  }, [newExport.details, showModal, isViewMode]); // Chỉ theo dõi sự thay đổi của details
 
   // 2. Khôi phục
   useEffect(() => {
     if (showModal && !isViewMode) {
       const savedDraft = localStorage.getItem(DRAFT_KEY);
-      const savedCustomer = localStorage.getItem(DRAFT_CUSTOMER_KEY);
+
+      // Mặc định luôn lấy mã mới (vì đây coi như là phiếu mới tinh, chỉ giữ lại list hàng)
+      fetchNewCode();
 
       if (savedDraft) {
          try {
              const parsedDraft = JSON.parse(savedDraft);
-             if (parsedDraft.customer_id || parsedDraft.details.length > 0) {
-                 setNewExport(parsedDraft);
-                 if (savedCustomer) setSelectedCustomerInfo(JSON.parse(savedCustomer));
-                 toast.info('Đã khôi phục phiếu xuất đang soạn dở', { autoClose: 2000 });
-                 return; 
+             // Nếu trong nháp có sản phẩm
+             if (parsedDraft.details && parsedDraft.details.length > 0) {
+                 setNewExport(prev => ({
+                     ...INITIAL_EXPORT_STATE, // Reset hết các trường khác về mặc định
+                     code: prev.code,         // Giữ lại mã code vừa tạo hoặc đang loading
+                     details: parsedDraft.details // Chỉ điền sản phẩm vào
+                 }));
+                 
+                 // Đảm bảo thông tin khách hàng trống
+                 setSelectedCustomerInfo(null);
+                 
+                 toast.info('Đã khôi phục danh sách sản phẩm cũ', { autoClose: 2000 });
              }
-         } catch (e) { localStorage.removeItem(DRAFT_KEY); }
-      }
-      
-      const isDraftCurrent = newExport.customer_id || newExport.details.length > 0;
-      if (!isDraftCurrent) {
-          setNewExport({ ...INITIAL_EXPORT_STATE, code: 'Đang tải mã...' });
+         } catch (e) { 
+             localStorage.removeItem(DRAFT_KEY); 
+         }
+      } else {
+          // Nếu không có nháp thì reset về trắng hoàn toàn
+          setNewExport(prev => ({ ...INITIAL_EXPORT_STATE, code: prev.code }));
           setSelectedCustomerInfo(null);
-          fetchNewCode();
       }
     }
   }, [showModal, isViewMode]);
 
   // --- HÀM LÀM MỚI FORM (RESET) ---
   const handleResetForm = () => {
-    if (window.confirm('Bạn có chắc muốn xóa hết thông tin đang nhập để tạo phiếu mới?')) {
+    if (window.confirm('Bạn có chắc muốn xóa hết sản phẩm để tạo phiếu mới?')) {
         setNewExport(INITIAL_EXPORT_STATE);
         setSelectedCustomerInfo(null);
+        
         localStorage.removeItem(DRAFT_KEY);
-        localStorage.removeItem(DRAFT_CUSTOMER_KEY);
+        // localStorage.removeItem(DRAFT_CUSTOMER_KEY); // Dòng này bỏ cũng được
         
-        setIdempotencyKey(uuidv4()); // <--- THÊM: Tạo key mới khi reset
-        
+        setIdempotencyKey(uuidv4());
         fetchNewCode();
         toast.info('Đã làm mới form');
     }
