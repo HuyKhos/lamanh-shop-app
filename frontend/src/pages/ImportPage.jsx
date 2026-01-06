@@ -143,9 +143,6 @@ const ImportPage = () => {
        if (newImport.details.length > 0) {
            const draftData = { details: newImport.details };
            localStorage.setItem(DRAFT_KEY, JSON.stringify(draftData));
-       } else {
-           // Nếu giỏ hàng trống thì xóa nháp cũ đi
-           localStorage.removeItem(DRAFT_KEY);
        }
     }
   }, [newImport.details, showModal, isViewMode]);
