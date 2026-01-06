@@ -32,9 +32,11 @@ const exportSchema = new mongoose.Schema({
     
     product_name_backup: String,
     quantity: Number,
+    import_price: Number, // Lưu giá vốn tại thời điểm xuất
     export_price: Number,
     discount: Number,
-    total: Number
+    total: Number,
+    profit: Number
   }]
 }, { timestamps: true });
 

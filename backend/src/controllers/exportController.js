@@ -38,6 +38,7 @@ const createExport = async (req, res) => {
     if (!details || details.length === 0) throw new Error('Giỏ hàng rỗng');
 
     let totalPointsChange = 0;
+    const enrichedDetails = [];
 
     // --- XỬ LÝ KHO & ĐIỂM (Giữ nguyên logic cũ) ---
     for (const item of details) {
@@ -47,7 +48,19 @@ const createExport = async (req, res) => {
         { session, new: true }
       );
       if (!productUpdate) throw new Error(`Sản phẩm ID ${item.product_id} không đủ hàng.`);
+      
       totalPointsChange += (item.gift_points || 0) * item.quantity;
+
+      const importPrice = productUpdate.import_price || 0;
+      const lineProfit = (item.total || 0) - (importPrice * item.quantity);
+
+      // --- THÊM: Đẩy item vào mảng mới kèm theo giá nhập hiện tại ---
+      enrichedDetails.push({
+        ...item,
+        import_price: productUpdate.import_price || 0, // Lấy giá vốn từ DB
+        profit: lineProfit
+      });
+      // -------------------------------------------------------------
     }
 
     const updatedCustomer = await Partner.findByIdAndUpdate(
@@ -64,10 +77,10 @@ const createExport = async (req, res) => {
       customer_id, 
       total_amount, 
       note, 
-      details, 
+      details: enrichedDetails, // <--- SỬA CHỖ NÀY
       payment_due_date,
       partner_points_snapshot: updatedCustomer.saved_points,
-      idempotency_key // <--- Lưu vào đây
+      idempotency_key
     });
     
     await exportReceipt.save({ session });

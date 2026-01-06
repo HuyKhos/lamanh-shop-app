@@ -518,8 +518,18 @@ const ExportPage = () => {
                 continue;
             }
 
-            const finalPrice = getPriceForProduct(product);
+            // 1. Lấy giá gốc (Chưa trừ tiền)
+            const originalPrice = product.export_price || 0;
+
+            // 2. Tính % chiết khấu tự động (theo logic Khách sỉ/Lẻ)
+            let autoDiscount = 0;
+            if (newExport.apply_wholesale) {
+                autoDiscount = product.discount_percent || 0;
+            }
+
+            // 3. Tính số lượng hợp lệ
             const finalQuantity = Math.min(quantity, product.current_stock);
+            const qty = finalQuantity > 0 ? finalQuantity : 1;
 
             importedDetails.push({
               product_id: product._id,
@@ -527,9 +537,10 @@ const ExportPage = () => {
               sku: product.sku,
               unit: product.unit,
               quantity: finalQuantity > 0 ? finalQuantity : 1,
-              export_price: Math.round(finalPrice), // <--- SỬA: Math.round giá nhập từ excel
+              export_price: originalPrice,
+              discount: autoDiscount,
               gift_points: product.gift_points || 0,
-              total: Math.round((finalQuantity > 0 ? finalQuantity : 1) * finalPrice)
+              total: calculateLineTotal(qty, originalPrice, autoDiscount)
             });
           } else {
             notFoundProducts.push(productName);
@@ -770,7 +781,36 @@ const handleKeyDown = (e) => {
                     <td className="p-4 font-bold text-blue-600 font-mono">{item.code}</td>
                     <td className="p-4 text-gray-800">{new Date(item.date).toLocaleDateString('vi-VN')}</td>
                     <td className="p-4 font-medium text-gray-800">{item.customer_id?.name} {item.hide_price && <span className="ml-2 text-[10px] bg-yellow-100 text-yellow-700 px-1 py-0.5 rounded border border-yellow-200">Ẩn giá</span>}</td>
-                    <td className="p-4 text-right font-bold text-gray-800">{formatCurrency(item.total_amount)}₫</td>
+                    <td className="p-4 text-right font-bold text-gray-800">
+                      <div>{formatCurrency(item.total_amount)}₫</div>
+                      
+                      {(() => {
+                          // Cách 1: Ưu tiên lấy tổng lãi ĐÃ LƯU trong DB (Nhanh, Chính xác)
+                          let profit = item.details.reduce((sum, d) => sum + (d.profit || 0), 0);
+
+                          // Cách 2: Nếu là đơn cũ (chưa có trường profit), dùng logic tính lại (Backup)
+                          const hasStoredProfit = item.details.some(d => d.profit !== undefined);
+                          
+                          if (!hasStoredProfit) {
+                              const totalCost = item.details.reduce((sum, d) => {
+                                    let unitCost = d.import_price;
+                                    if (unitCost === undefined || unitCost === null) {
+                                        const currentProduct = products.find(p => p._id === d.product_id);
+                                        unitCost = currentProduct ? currentProduct.import_price : 0;
+                                    }
+                                    return sum + (Number(unitCost || 0) * d.quantity);
+                              }, 0);
+                              profit = item.total_amount - totalCost;
+                          }
+
+                          return (
+                              <div className={`text-xs font-medium mt-1 ${profit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                {hasStoredProfit ? 'Lãi: ' : 'Lãi (ước tính): '}
+                                {formatCurrency(profit)}₫
+                              </div>
+                          );
+                      })()}
+                  </td>
                     <td className="p-4 text-gray-500 italic text-sm max-w-[200px] truncate" title={item.note}>{item.note || ''}</td>
                     <td className="p-4 text-center flex justify-center gap-1">
                     <button onClick={(e) => checkExportAction(e, item, 'print')} className="p-2 text-gray-600 hover:bg-gray-200 rounded" title="In phiếu"><Printer size={18} /></button>
