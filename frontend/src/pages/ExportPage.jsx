@@ -147,9 +147,6 @@ const ExportPage = () => {
         setNewExport(INITIAL_EXPORT_STATE);
         setSelectedCustomerInfo(null);
         
-        localStorage.removeItem(DRAFT_KEY);
-        // localStorage.removeItem(DRAFT_CUSTOMER_KEY); // Dòng này bỏ cũng được
-        
         setIdempotencyKey(uuidv4());
         fetchNewCode();
         toast.info('Đã làm mới form');
@@ -440,7 +437,6 @@ const ExportPage = () => {
         await axiosClient.post('/exports', payload);
         
         localStorage.removeItem(DRAFT_KEY);
-        localStorage.removeItem(DRAFT_CUSTOMER_KEY);
         
         toast.success('Xuất kho thành công!'); 
         triggerRefresh(['exports', 'products', 'debts', 'dashboard', 'partners']); 
