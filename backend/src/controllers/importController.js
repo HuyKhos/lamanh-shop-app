@@ -105,7 +105,6 @@ const deleteImport = async (req, res) => {
     }
 
     // 3. Xóa hồ sơ nợ và Phiếu nhập
-    await DebtRecord.deleteOne({ reference_code: receipt.code }).session(session);
     await ImportReceipt.deleteOne({ _id: receipt._id }).session(session);
 
     await session.commitTransaction();
