@@ -8,7 +8,6 @@ import productRoutes from './routes/productRoutes.js';
 import importRoutes from './routes/importRoutes.js';
 import exportRoutes from './routes/exportRoutes.js';
 import partnerRoutes from './routes/partnerRoutes.js';
-import debtRoutes from './routes/debtRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
 
 dotenv.config();
@@ -48,7 +47,6 @@ app.use('/api/products', productRoutes);
 app.use('/api/imports', importRoutes);
 app.use('/api/exports', exportRoutes); // [cite: 1, 2, 3]
 app.use('/api/partners', partnerRoutes);
-app.use('/api/debts', debtRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
 // --- ROUTE TRANG CHỦ CỦA BACKEND ---

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom'; 
 import { 
   Users, Plus, Search, X, MapPin, Phone, User, 
-  Trash2, Save, Menu, Pencil, Filter, ArrowUpDown, ArrowUp, ArrowDown, HandCoins,
+  Trash2, Save, Menu, Pencil, Filter, ArrowUpDown, ArrowUp, ArrowDown,
   Crown, EyeOff, ChevronLeft, ChevronRight 
 } from 'lucide-react';
 import axiosClient from '../api/axiosClient';
@@ -28,12 +28,13 @@ const PartnerPage = () => {
   const [partners, setPartners] = useState(globalCache.partners || []); 
   const [loading, setLoading] = useState(!globalCache.partners);
 
+  // Đã xóa current_debt khỏi state mặc định
   const [formData, setFormData] = useState({
-    _id: null, name: '', phone: '', address: '', type: 'customer', current_debt: 0, is_wholesale: false, hide_price: false
+    _id: null, name: '', phone: '', address: '', type: 'customer', is_wholesale: false, hide_price: false
   });
 
   const resetForm = () => {
-    setFormData({ _id: null, name: '', phone: '', address: '', type: 'customer', current_debt: 0, is_wholesale: false, hide_price: false });
+    setFormData({ _id: null, name: '', phone: '', address: '', type: 'customer', is_wholesale: false, hide_price: false });
     setIsEditMode(false);
   };
 
@@ -43,7 +44,7 @@ const PartnerPage = () => {
     setTimeout(() => {
         setShowModal(false);
         setIsClosing(false);
-    }, 100); // 0.1s
+    }, 100); 
   };
 
   useEffect(() => {
@@ -107,16 +108,14 @@ const PartnerPage = () => {
       if (isEditMode && formData._id) {
         await axiosClient.put(`/partners/${formData._id}`, formData);
         toast.success('Cập nhật thành công! ✏️');
-        triggerRefresh(['exports', 'imports', 'dashboard', 'debts', 'partners']);
+        triggerRefresh(['exports', 'imports', 'dashboard', 'partners']); // Bỏ debts khỏi triggerRefresh
       } else {
         await axiosClient.post('/partners', formData);
         toast.success('Thêm đối tác thành công! 🎉');
         triggerRefresh(['exports', 'imports', 'partners']);
       }
       
-      // ĐÓNG MODAL VỚI HIỆU ỨNG
       handleClose();
-      
       fetchPartners();
     } catch (error) { toast.error('Lỗi: ' + (error.response?.data?.message || error.message)); }
   };
@@ -138,11 +137,9 @@ const PartnerPage = () => {
     if (type === 'supplier') return <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-bold border border-blue-200">Nhà cung cấp</span>;
     return type;
   };
-  const getDebtColorClass = (partner) => { if (partner.type === 'customer') return 'text-orange-600'; if (partner.type === 'supplier') return 'text-blue-600'; return 'text-gray-800'; };
 
   return (
     <div className="p-2 pb-10">
-      {/* --- ĐỊNH NGHĨA KEYFRAMES ANIMATION (FadeIn & FadeOut) --- */}
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: scale(0.95); }
@@ -187,12 +184,13 @@ const PartnerPage = () => {
                 <th className="p-4 cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('phone')}><div className="flex items-center">Điện thoại {renderSortIcon('phone')}</div></th>
                 <th className="p-4">Địa chỉ</th>
                 <th className="p-4 text-center">Điểm gửi</th>
-                <th className="p-4 text-right cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('current_debt')}><div className="flex items-center justify-end">Công nợ {renderSortIcon('current_debt')}</div></th>
+                {/* Đã xóa cột Công nợ ở đây */}
                 <th className="p-4 text-center w-28">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y">
-              {currentPartners.length === 0 ? ( <tr><td colSpan="7" className="p-8 text-center text-gray-500">{loading ? 'Đang tải...' : 'Không tìm thấy đối tác nào.'}</td></tr> ) : (
+              {/* Đã sửa colSpan từ 7 thành 6 */}
+              {currentPartners.length === 0 ? ( <tr><td colSpan="6" className="p-8 text-center text-gray-500">{loading ? 'Đang tải...' : 'Không tìm thấy đối tác nào.'}</td></tr> ) : (
                 currentPartners.map((p) => (
                   <tr key={p._id} className="hover:bg-gray-100 transition-colors cursor-pointer group" onClick={() => handleRowClick(p)}>
                     <td className="p-4 font-medium text-gray-800">{p.name}<div className="flex gap-1 mt-1">{p.is_wholesale && <span title="Khách sỉ (VIP)" className="bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded text-[10px] border border-yellow-200 flex items-center gap-1 w-fit"><Crown size={10} /> VIP</span>}{p.hide_price && <span title="Ẩn giá khi in" className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded text-[10px] border border-gray-200 flex items-center gap-1 w-fit"><EyeOff size={10} /> Ẩn giá</span>}</div></td>
@@ -200,7 +198,7 @@ const PartnerPage = () => {
                     <td className="p-4 text-gray-600 font-mono text-sm">{p.phone}</td>
                     <td className="p-4 text-gray-600 truncate max-w-xs">{p.address}</td>
                     <td className="p-4 text-center font-bold">{p.saved_points || 0}</td>
-                    <td className={`p-4 text-right font-bold ${getDebtColorClass(p)}`}>{p.current_debt?.toLocaleString()}₫</td>
+                    {/* Đã xóa hiển thị dữ liệu Công nợ ở đây */}
                     <td className="p-4 text-center"><button onClick={(e) => handleDeletePartner(e, p._id, p.name)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-all" title="Xóa đối tác"><Trash2 size={18} /></button></td>
                   </tr>
                 ))
@@ -264,7 +262,7 @@ const PartnerPage = () => {
                       <div className="flex items-center justify-between border-t border-blue-200 pt-3"><div className="flex items-center gap-2"><EyeOff size={18} className="text-gray-500" /><span className="text-sm font-medium text-gray-700">Luôn ẩn giá khi in phiếu</span></div><label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={formData.hide_price} onChange={(e) => setFormData({...formData, hide_price: e.target.checked})} /><div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div></label></div>
                     </div>
                   )}
-                  {isEditMode && (<div className="bg-gray-50 p-3 rounded-lg border border-gray-200 flex items-center justify-between"><span className="text-sm text-gray-600 flex items-center gap-1"><HandCoins size={16} /> Công nợ hiện tại:</span><span className={`font-bold text-lg ${getDebtColorClass(formData)}`}>{formData.current_debt?.toLocaleString()}₫</span></div>)}
+                  {/* Đã xóa hiển thị "Công nợ hiện tại" trong Form Update ở đây */}
                 </div>
               </form>
             </div>

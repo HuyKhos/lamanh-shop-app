@@ -1,7 +1,6 @@
 import mongoose from 'mongoose'; // Cần thêm để dùng session
 import ExportReceipt from '../models/exportModel.js';
 import Product from '../models/productModel.js';
-import DebtRecord from '../models/debtModel.js';
 import Partner from '../models/partnerModel.js';
 import Counter from '../models/counterModel.js';
 
@@ -21,16 +20,14 @@ export const generateExportCode = async () => {
   return `XK-${dateStr}-${String(counter.seq).padStart(3, '0')}`;
 };
 
-// --- 2. TẠO PHIẾU XUẤT (Cập nhật: Transaction & Atomic) ---
+// --- 2. TẠO PHIẾU XUẤT (Đã bỏ Công nợ) ---
 const createExport = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
-    // 1. Nhận thêm idempotency_key từ Frontend
     const { customer_id, details, total_amount, note, payment_due_date, idempotency_key } = req.body;
 
-    // Kiểm tra bắt buộc phải có key này
     if (!idempotency_key) {
       throw new Error("Thiếu khóa bảo mật (idempotency_key). Vui lòng tải lại trang.");
     }
@@ -40,7 +37,7 @@ const createExport = async (req, res) => {
     let totalPointsChange = 0;
     const enrichedDetails = [];
 
-    // --- XỬ LÝ KHO & ĐIỂM (Giữ nguyên logic cũ) ---
+    // --- XỬ LÝ KHO & ĐIỂM ---
     for (const item of details) {
       const productUpdate = await Product.findOneAndUpdate(
         { _id: item.product_id, current_stock: { $gte: item.quantity } },
@@ -54,30 +51,29 @@ const createExport = async (req, res) => {
       const importPrice = productUpdate.import_price || 0;
       const lineProfit = (item.total || 0) - (importPrice * item.quantity);
 
-      // --- THÊM: Đẩy item vào mảng mới kèm theo giá nhập hiện tại ---
       enrichedDetails.push({
         ...item,
-        import_price: productUpdate.import_price || 0, // Lấy giá vốn từ DB
+        import_price: productUpdate.import_price || 0,
         profit: lineProfit
       });
-      // -------------------------------------------------------------
     }
 
+    // CẬP NHẬT: Chỉ cộng điểm cho khách, KHÔNG cộng current_debt nữa
     const updatedCustomer = await Partner.findByIdAndUpdate(
       customer_id,
-      { $inc: { current_debt: total_amount, saved_points: totalPointsChange } },
+      { $inc: { saved_points: totalPointsChange } }, 
       { session, new: true }
     );
     if (!updatedCustomer) throw new Error('Khách hàng không tồn tại');
 
-    // --- LƯU PHIẾU (QUAN TRỌNG: Thêm idempotency_key) ---
+    // --- LƯU PHIẾU ---
     const code = await generateExportCode();
     const exportReceipt = new ExportReceipt({
       code, 
       customer_id, 
       total_amount, 
       note, 
-      details: enrichedDetails, // <--- SỬA CHỖ NÀY
+      details: enrichedDetails, 
       payment_due_date,
       partner_points_snapshot: updatedCustomer.saved_points,
       idempotency_key
@@ -85,37 +81,25 @@ const createExport = async (req, res) => {
     
     await exportReceipt.save({ session });
 
-    // --- GHI NỢ (Giữ nguyên) ---
-    const debt = new DebtRecord({
-      partner_id: customer_id,
-      reference_code: code,
-      amount: total_amount,
-      remaining_amount: total_amount,
-      dueDate: payment_due_date,
-    });
-    await debt.save({ session });
+    // Đã xóa phần tạo bảng ghi DebtRecord ở đây
 
     await session.commitTransaction();
     res.status(201).json({ receipt: exportReceipt, message: 'Xuất kho thành công!' });
 
   } catch (error) {
     await session.abortTransaction();
-
-    // --- BẮT LỖI TRÙNG LẶP (DUPLICATE KEY) ---
-    // Mã lỗi 11000 là mã đặc trưng của MongoDB khi vi phạm unique index
     if (error.code === 11000 && error.keyPattern && error.keyPattern.idempotency_key) {
       return res.status(409).json({ 
         message: 'Giao dịch này đã được xử lý thành công trước đó (Trùng lặp thao tác).' 
       });
     }
-
     res.status(400).json({ message: 'Lỗi tạo phiếu: ' + error.message });
   } finally {
     session.endSession();
   }
 };
 
-// --- 3. XÓA PHIẾU (Cập nhật: Transaction & Atomic) ---
+// --- 3. XÓA PHIẾU (Đã bỏ Công nợ) ---
 const deleteExport = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -139,20 +123,18 @@ const deleteExport = async (req, res) => {
       pointsToRevert += (item.gift_points || 0) * item.quantity;
     }
 
-    // 3. Hoàn lại Nợ và Điểm cho khách (Atomic)
+    // 3. CẬP NHẬT: Chỉ hoàn lại Điểm cho khách (không trừ current_debt nữa)
     await Partner.findByIdAndUpdate(
       receipt.customer_id,
       { 
         $inc: { 
-          current_debt: -receipt.total_amount, 
           saved_points: -pointsToRevert 
         } 
       },
       { session }
     );
 
-    // 4. Xóa ghi nợ và phiếu
-    await DebtRecord.deleteOne({ reference_code: receipt.code }).session(session);
+    // 4. Xóa phiếu (Đã bỏ phần xóa DebtRecord)
     await ExportReceipt.deleteOne({ _id: receipt._id }).session(session);
 
     await session.commitTransaction();

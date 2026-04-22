@@ -10,7 +10,6 @@ import ProductPage from './pages/ProductPage';
 import ImportPage from './pages/ImportPage';
 import ExportPage from './pages/ExportPage';
 import PartnerPage from './pages/PartnerPage';
-import DebtPage from './pages/DebtPage';
 
 function App() {
   return (
@@ -25,7 +24,6 @@ function App() {
           <Route path="imports" element={<ImportPage />} />
           <Route path="exports" element={<ExportPage />} />
           <Route path="partners" element={<PartnerPage />} />
-          <Route path="debts" element={<DebtPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

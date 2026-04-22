@@ -9,11 +9,11 @@ const MainLayout = () => {
 
   // --- KHO DỮ LIỆU (Giữ nguyên) ---
   const [globalCache, setGlobalCache] = useState({
-    dashboard: null, products: null, imports: null, exports: null, partners: null, debts: null
+    dashboard: null, products: null, imports: null, exports: null, partners: null,
   });
 
   const [refreshFlags, setRefreshFlags] = useState({
-    dashboard: true, products: true, imports: true, exports: true, partners: true, debts: true
+    dashboard: true, products: true, imports: true, exports: true, partners: true,
   });
 
   const updateCache = (key, data) => {
@@ -46,7 +46,6 @@ const MainLayout = () => {
     { path: '/imports', label: 'Nhập kho', icon: <ArrowDownToLine size={20} /> },
     { path: '/exports', label: 'Xuất kho', icon: <ArrowUpFromLine size={20} /> },
     { path: '/partners', label: 'Đối tác', icon: <Users size={20} /> },
-    { path: '/debts', label: 'Công nợ', icon: <Wallet size={20} /> },
   ];
 
   return (
