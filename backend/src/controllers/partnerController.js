@@ -35,29 +35,50 @@ const createPartner = async (req, res) => {
   }
 };
 
-// @desc    Lấy danh sách đối tác (Có tìm kiếm & Lọc)
+// @desc    Lấy danh sách đối tác (Đã nâng cấp: Phân trang Server-side & Tìm kiếm)
 // @route   GET /api/partners
 const getPartners = async (req, res) => {
   try {
+    // 1. Nhận tham số từ Frontend (Mặc định trang 1, mỗi trang 10 dòng)
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
     const { type, keyword } = req.query;
+
     let query = {};
 
-    // 1. Lọc theo loại (Khách hàng / NCC)
+    // 2. Lọc theo loại (Khách hàng / NCC)
     if (type && type !== 'all') {
       query.type = type;
     }
 
-    // 2. Tìm kiếm thông minh (Regex)
-    // Tìm gần đúng trong Tên HOẶC Số điện thoại
+    // 3. Tìm kiếm thông minh (Regex)
     if (keyword) {
       query.$or = [
-        { name: { $regex: keyword, $options: 'i' } }, // 'i' nghĩa là không phân biệt hoa thường
+        { name: { $regex: keyword, $options: 'i' } },
         { phone: { $regex: keyword, $options: 'i' } }
       ];
     }
 
-    const partners = await Partner.find(query).sort({ createdAt: -1 });
-    res.json(partners);
+    // 4. Tính toán vị trí bắt đầu cắt dữ liệu (Skip)
+    const skip = (page - 1) * limit;
+
+    // 5. Chạy song song 2 việc: Lấy dữ liệu 1 trang & Đếm tổng số lượng
+    // Dùng Promise.all giúp truy vấn nhanh hơn gấp đôi so với chạy tuần tự
+    const [partners, totalItems] = await Promise.all([
+      Partner.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit),
+      Partner.countDocuments(query)
+    ]);
+
+    // 6. Trả về format mới: Gồm mảng Data và thông tin Phân trang (Pagination)
+    res.json({
+      data: partners,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalItems / limit),
+        totalItems: totalItems,
+        limit: limit
+      }
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
