@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom'; 
+import _ from 'lodash';
 import { 
   ArrowDownToLine, Plus, Search, X, User, FileText, 
   Trash2, Save, Menu, Barcode, Package, DollarSign,
