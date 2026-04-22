@@ -169,7 +169,7 @@ const Dashboard = () => {
         </div>
 
         {/* Hàng 3: Top Sản phẩm, Khách hàng & CÔNG NỢ (ĐÃ ĐỔI CHỖ) */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
           <div className="bg-white p-5 rounded-xl shadow-sm border">
             <h3 className="font-bold text-gray-700 mb-4">Top Sản phẩm bán chạy</h3>
             <div className="h-64 flex justify-center">
@@ -181,35 +181,6 @@ const Dashboard = () => {
             <h3 className="font-bold text-gray-700 mb-4">Top Khách hàng thân thiết</h3>
             <div className="h-64 flex justify-center">
               <Doughnut data={customerData} options={{ maintainAspectRatio: false,plugins: {legend: {display: false }}}} />
-            </div>
-          </div>
-
-          {/* Widget Công nợ chuyển xuống đây */}
-          <div className="bg-white p-5 rounded-xl shadow-sm border flex flex-col">
-            <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2">
-              <AlertCircle size={18} className="text-red-500" /> Công nợ cần thu
-            </h3>
-            <div className="space-y-3 overflow-y-auto flex-1 max-h-64">
-              {/* BƯỚC LỌC TRỰC TIẾP TẠI FRONTEND */}
-              {data.debt.filter(d => d.remaining > 0).length === 0 ? (
-                <p className="text-gray-500 text-sm">Không có nợ đến hạn.</p> 
-              ) : (
-                data.debt
-                  .filter(d => d.remaining > 0) // <--- CHỈ HIỂN THỊ NẾU > 0
-                  .map((d, i) => (
-                    <div key={i} className="flex justify-between items-center p-3 bg-red-50 rounded-lg border border-red-100">
-                      <div>
-                        <p className="font-bold text-sm text-gray-800">{d.customer}</p>
-                        <p className="text-xs text-gray-500">
-                          Hạn: {d.dueDate ? new Date(d.dueDate).toLocaleDateString('vi-VN') : '---'}
-                        </p>
-                      </div>
-                      <span className="font-bold text-red-600 text-sm">
-                        {d.remaining?.toLocaleString()} đ
-                      </span>
-                    </div>
-                ))
-              )}
             </div>
           </div>
 
