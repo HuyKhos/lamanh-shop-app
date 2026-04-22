@@ -101,12 +101,19 @@ const ImportPage = () => {
       ]);
       setImports(importRes);
       updateCache('imports', importRes);
-      setSuppliers(supplierRes);
-      setProducts(productRes);
-    } catch (error) { toast.error('Lỗi tải dữ liệu'); } finally { setLoading(false); }
+
+      // FIX LỖI: Lấy .data nếu API trả về Object phân trang
+      setSuppliers(supplierRes.data || supplierRes);
+      setProducts(productRes.data || productRes);
+    } catch (error) { 
+      toast.error('Lỗi tải dữ liệu'); 
+    } finally { 
+      setLoading(false); 
+    }
   };
 
-  const supplierOptions = suppliers.map(s => ({ value: s._id, label: s.name }));
+  const safeSuppliers = Array.isArray(suppliers) ? suppliers : [];
+  const supplierOptions = safeSuppliers.map(s => ({ value: s._id, label: s.name }));
 
   useEffect(() => { fetchData(); }, []);
   useEffect(() => { setCurrentPage(1); }, [searchTerm, sortConfig]);

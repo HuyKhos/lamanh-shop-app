@@ -153,7 +153,9 @@ const ExportPage = () => {
     }
   };
 
-  const customerOptions = customers.map(c => ({ value: c._id, label: c.name }));
+  // --- BẢO VỆ MẢNG TRƯỚC KHI MAP ---
+  const safeCustomers = Array.isArray(customers) ? customers : [];
+  const customerOptions = safeCustomers.map(c => ({ value: c._id, label: c.name }));
 
   // --- USE EFFECT: LOAD DATA ---
   useEffect(() => {
@@ -161,9 +163,28 @@ const ExportPage = () => {
     loadData();
   }, [refreshFlags.exports]);
 
-  const fetchData = async () => { try { setLoading(true); const [exportRes, customerRes, productRes] = await Promise.all([axiosClient.get('/exports'), axiosClient.get('/partners?type=customer'), axiosClient.get('/products')]); setExports(exportRes); updateCache('exports', exportRes); setCustomers(customerRes); setProducts(productRes); } catch (error) { toast.error('Lỗi tải dữ liệu'); } finally { setLoading(false); } };
-  useEffect(() => { fetchData(); }, []);
-  useEffect(() => { setCurrentPage(1); }, [searchTerm, sortConfig]);
+  const fetchData = async () => { 
+    try { 
+      setLoading(true); 
+      const [exportRes, customerRes, productRes] = await Promise.all([
+        axiosClient.get('/exports'), 
+        axiosClient.get('/partners?type=customer'), 
+        axiosClient.get('/products')
+      ]); 
+      
+      setExports(exportRes); 
+      updateCache('exports', exportRes); 
+      
+      // FIX LỖI: Lấy .data nếu API trả về Object phân trang
+      setCustomers(customerRes.data || customerRes); 
+      setProducts(productRes.data || productRes); 
+      
+    } catch (error) { 
+      toast.error('Lỗi tải dữ liệu'); 
+    } finally { 
+      setLoading(false); 
+    } 
+  };
 
   // --- IN ẤN & XUẤT ẢNH ---
   const generateInvoiceHTML = (item, hidePrice, isImageExport = false) => {
