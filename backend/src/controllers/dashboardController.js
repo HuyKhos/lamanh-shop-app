@@ -3,7 +3,6 @@ import Product from '../models/productModel.js';
 import Partner from '../models/partnerModel.js';
 import Config from '../models/configModel.js';
 import ImportReceipt from '../models/importModel.js';
-import DebtRecord from '../models/debtModel.js';
 
 const getDashboardData = async (req, res) => {
   try {
@@ -157,31 +156,6 @@ const getDashboardData = async (req, res) => {
       { $sort: { _id: 1 } } 
     ]);
 
-    // --- 5. Lấy danh sách Công nợ (ĐÃ TỐI ƯU) ---
-    // Chỉ lấy nợ dương (> 0), sắp xếp hạn thanh toán tăng dần
-    const debtList = await DebtRecord.find({
-      amount: { $exists: true } 
-   })
-   .populate('partner_id', 'name phone')
-   .sort({ dueDate: 1 });
-
-   // Bước 2: Map và Lọc bằng Javascript
-   const formattedDebts = debtList
-     .map(d => {
-       const paid = d.paid_amount || 0;
-       const remainingCalc = d.amount - paid;
-       
-       return {
-         _id: d._id,
-         customer: d.partner_id ? d.partner_id.name : 'Khách lẻ',
-         phone: d.partner_id ? d.partner_id.phone : '',
-         remaining: remainingCalc, 
-         dueDate: d.dueDate
-       };
-     })
-     .filter(item => item.remaining > 0)
-     .slice(0, 20);
-
     // Top sản phẩm
     const topProducts = await ExportReceipt.aggregate([
       { $match: { date: { $gte: startOfMonth } } },
@@ -219,7 +193,6 @@ const getDashboardData = async (req, res) => {
         stockValueGrowth: stockValueGrowth.toFixed(1)
       },
       trend: revenueTrend,
-      debt: formattedDebts,
       topProducts: topProducts.map(p => ({ name: p._id, value: p.value })),
       topCustomers
     });
