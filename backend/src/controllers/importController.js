@@ -1,7 +1,6 @@
 import mongoose from 'mongoose';
 import ImportReceipt from '../models/importModel.js';
 import Product from '../models/productModel.js';
-import DebtRecord from '../models/debtModel.js';
 import Partner from '../models/partnerModel.js';
 import Counter from '../models/counterModel.js';
 
@@ -52,14 +51,6 @@ const createImport = async (req, res) => {
       if (!updatedProduct) throw new Error(`Sản phẩm ID ${item.product_id} lỗi.`);
     }
 
-    // --- CẬP NHẬT CÔNG NỢ ---
-    const supplier = await Partner.findByIdAndUpdate(
-      supplier_id,
-      { $inc: { current_debt: total_amount } },
-      { session, new: true }
-    );
-    if (!supplier) throw new Error('Nhà cung cấp không tồn tại');
-
     // --- TẠO PHIẾU NHẬP (Instance) ---
     const importReceipt = new ImportReceipt({
       code, 
@@ -74,17 +65,6 @@ const createImport = async (req, res) => {
     // --- LƯU PHIẾU ---
     // Sửa lỗi: Không cần gán vào biến savedImport, dùng importReceipt._id trực tiếp
     await importReceipt.save({ session }); 
-
-    // --- GHI NỢ ---
-    const debt = new DebtRecord({
-      partner_id: supplier_id,
-      reference_code: code,
-      reference_id: importReceipt._id, // Dùng ID trực tiếp từ đối tượng đã khởi tạo
-      amount: total_amount, 
-      paid_amount: 0,
-      remaining_amount: total_amount,
-    });
-    await debt.save({ session });
 
     await session.commitTransaction();
     res.status(201).json({ receipt: importReceipt, message: 'Nhập kho thành công!' });
@@ -123,13 +103,6 @@ const deleteImport = async (req, res) => {
         { session }
       );
     }
-
-    // 2. Trừ ngược nợ nhà cung cấp
-    await Partner.findByIdAndUpdate(
-      receipt.supplier_id,
-      { $inc: { current_debt: -receipt.total_amount } },
-      { session }
-    );
 
     // 3. Xóa hồ sơ nợ và Phiếu nhập
     await DebtRecord.deleteOne({ reference_code: receipt.code }).session(session);
