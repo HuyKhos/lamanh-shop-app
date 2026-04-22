@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom'; 
 import { 
   Users, Plus, Search, X, MapPin, Phone, User, 
@@ -7,20 +7,24 @@ import {
 } from 'lucide-react';
 import axiosClient from '../api/axiosClient';
 import { toast } from 'react-toastify';
-import _ from 'lodash'; // Nếu chưa có, hãy chạy: npm install lodash
 
 const PartnerPage = () => {
   const { isExpanded, setIsExpanded } = useOutletContext();
   const { globalCache, refreshFlags, updateCache, triggerRefresh } = useOutletContext();
 
+  // --- 1. XỬ LÝ CACHE AN TOÀN CHỐNG CRASH ---
+  const getInitialPartners = () => {
+    if (!globalCache.partners) return [];
+    if (Array.isArray(globalCache.partners)) return globalCache.partners; // Nếu cache là mảng cũ
+    if (globalCache.partners.data && Array.isArray(globalCache.partners.data)) return globalCache.partners.data; // Nếu cache là Object phân trang mới
+    return [];
+  };
+
   // --- STATE DỮ LIỆU & PHÂN TRANG ---
-  const [partners, setPartners] = useState([]); 
+  const [partners, setPartners] = useState(getInitialPartners()); 
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState({
-    currentPage: 1,
-    totalPages: 0,
-    totalItems: 0,
-    limit: 10
+    currentPage: 1, totalPages: 0, totalItems: 0, limit: 10
   });
 
   // --- STATE BỘ LỌC ---
@@ -37,59 +41,57 @@ const PartnerPage = () => {
     _id: null, name: '', phone: '', address: '', type: 'customer', is_wholesale: false, hide_price: false
   });
 
-  // --- HÀM GỌI API (ĐÃ GIA CỐ CHỐNG CRASH) ---
+  // --- HÀM GỌI API (SERVER-SIDE) ---
   const fetchPartners = async (page = currentPage, limit = itemsPerPage, type = filterType, search = searchTerm) => {
     try {
       setLoading(true);
       const res = await axiosClient.get('/partners', {
         params: {
-          page,
-          limit,
+          page, limit,
           type: type === 'all' ? undefined : type,
           keyword: search || undefined
         }
       });
       
-      // BẢO VỆ FRONTEND: Đảm bảo dữ liệu luôn là Mảng (Array)
+      // Bóc tách dữ liệu an toàn
       let validPartners = [];
-      let validPagination = { currentPage: 1, totalPages: 0, totalItems: 0, limit: 10 };
+      let validPagination = { currentPage: 1, totalPages: 0, totalItems: 0, limit };
 
       if (res && res.data && Array.isArray(res.data)) {
-        validPartners = res.data; // Format mới của Backend
+        validPartners = res.data; 
         validPagination = res.pagination || validPagination;
       } else if (Array.isArray(res)) {
-        validPartners = res; // Fallback: Nếu Backend cũ (trả về mảng trực tiếp) vẫn đang chạy
-      } else if (res && res.data && Array.isArray(res.data.data)) {
-        validPartners = res.data.data; // Fallback: Nếu API vô tình bọc 2 lớp data
+        validPartners = res; 
       }
 
       setPartners(validPartners);
       setPagination(validPagination);
-      updateCache('partners', validPartners);
+      updateCache('partners', res); // Lưu toàn bộ res vào cache
       
     } catch (error) {
       toast.error('Lỗi tải danh sách đối tác');
       console.error(error);
-      setPartners([]); // Đưa về mảng rỗng nếu gọi API thất bại
+      setPartners([]); 
     } finally {
       setLoading(false);
     }
   };
 
-  // --- DEBOUNCE TÌM KIẾM ---
-  // Tránh việc gọi API mỗi khi gõ 1 ký tự
-  const debouncedSearch = useCallback(
-    _.debounce((value) => {
-      setCurrentPage(1); // Reset về trang 1 khi tìm kiếm
-      fetchPartners(1, itemsPerPage, filterType, value);
-    }, 500),
-    [itemsPerPage, filterType]
-  );
+  // --- 2. DEBOUNCE TÌM KIẾM BẰNG NATIVE JS (KHÔNG DÙNG LODASH) ---
+  const typingTimeoutRef = useRef(null);
 
   const handleSearchChange = (e) => {
     const value = e.target.value;
     setSearchTerm(value);
-    debouncedSearch(value);
+    
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    
+    typingTimeoutRef.current = setTimeout(() => {
+      setCurrentPage(1); // Reset về trang 1
+      fetchPartners(1, itemsPerPage, filterType, value);
+    }, 500); // Đợi 0.5s sau khi gõ xong mới gọi API
   };
 
   // --- THEO DÕI THAY ĐỔI TRANG & BỘ LỌC ---
@@ -155,6 +157,9 @@ const PartnerPage = () => {
     return type;
   };
 
+  // Đảm bảo mảng an toàn trước khi render
+  const safePartners = Array.isArray(partners) ? partners : [];
+
   return (
     <div className="p-2 pb-10">
       <style>{`
@@ -212,10 +217,10 @@ const PartnerPage = () => {
             <tbody className="divide-y">
               {loading ? (
                 <tr><td colSpan="6" className="p-8 text-center text-gray-500">Đang tải dữ liệu...</td></tr>
-              ) : !Array.isArray(partners) || partners.length === 0 ? (
+              ) : safePartners.length === 0 ? (
                 <tr><td colSpan="6" className="p-8 text-center text-gray-500">Không tìm thấy đối tác nào.</td></tr>
               ) : (
-                partners.map((p) => (
+                safePartners.map((p) => (
                   <tr key={p._id} className="hover:bg-gray-100 transition-colors cursor-pointer group" onClick={() => handleRowClick(p)}>
                     <td className="p-4 font-medium text-gray-800">
                       {p.name}
@@ -268,7 +273,6 @@ const PartnerPage = () => {
                 <div className="flex gap-1">
                   {[...Array(pagination.totalPages)].map((_, i) => {
                     const page = i + 1;
-                    // Hiển thị tối đa 5 nút trang xung quanh trang hiện tại
                     if (page === 1 || page === pagination.totalPages || (page >= currentPage - 1 && page <= currentPage + 1)) {
                       return (
                         <button 
@@ -296,7 +300,7 @@ const PartnerPage = () => {
         )}
       </div>
 
-      {/* --- MODAL FORM (Giữ nguyên logic form của bạn) --- */}
+      {/* --- MODAL FORM --- */}
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 backdrop-blur-sm p-4">
           <div 
