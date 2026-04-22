@@ -37,7 +37,7 @@ const PartnerPage = () => {
     _id: null, name: '', phone: '', address: '', type: 'customer', is_wholesale: false, hide_price: false
   });
 
-  // --- HÀM GỌI API (SERVER-SIDE) ---
+  // --- HÀM GỌI API (ĐÃ GIA CỐ CHỐNG CRASH) ---
   const fetchPartners = async (page = currentPage, limit = itemsPerPage, type = filterType, search = searchTerm) => {
     try {
       setLoading(true);
@@ -50,13 +50,27 @@ const PartnerPage = () => {
         }
       });
       
-      // Lưu ý: Cấu trúc res lúc này là { data: [...], pagination: {...} }
-      setPartners(res.data);
-      setPagination(res.pagination);
-      updateCache('partners', res.data);
+      // BẢO VỆ FRONTEND: Đảm bảo dữ liệu luôn là Mảng (Array)
+      let validPartners = [];
+      let validPagination = { currentPage: 1, totalPages: 0, totalItems: 0, limit: 10 };
+
+      if (res && res.data && Array.isArray(res.data)) {
+        validPartners = res.data; // Format mới của Backend
+        validPagination = res.pagination || validPagination;
+      } else if (Array.isArray(res)) {
+        validPartners = res; // Fallback: Nếu Backend cũ (trả về mảng trực tiếp) vẫn đang chạy
+      } else if (res && res.data && Array.isArray(res.data.data)) {
+        validPartners = res.data.data; // Fallback: Nếu API vô tình bọc 2 lớp data
+      }
+
+      setPartners(validPartners);
+      setPagination(validPagination);
+      updateCache('partners', validPartners);
+      
     } catch (error) {
       toast.error('Lỗi tải danh sách đối tác');
       console.error(error);
+      setPartners([]); // Đưa về mảng rỗng nếu gọi API thất bại
     } finally {
       setLoading(false);
     }
@@ -198,7 +212,7 @@ const PartnerPage = () => {
             <tbody className="divide-y">
               {loading ? (
                 <tr><td colSpan="6" className="p-8 text-center text-gray-500">Đang tải dữ liệu...</td></tr>
-              ) : partners.length === 0 ? (
+              ) : !Array.isArray(partners) || partners.length === 0 ? (
                 <tr><td colSpan="6" className="p-8 text-center text-gray-500">Không tìm thấy đối tác nào.</td></tr>
               ) : (
                 partners.map((p) => (
