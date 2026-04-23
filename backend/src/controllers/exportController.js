@@ -120,25 +120,31 @@ const deleteExport = async (req, res) => {
     const receipt = await ExportReceipt.findById(req.params.id).session(session);
     if (!receipt) throw new Error('Không tìm thấy phiếu');
 
+    // 1. Hoàn lại số lượng tồn kho cho sản phẩm
     for (const item of receipt.details) {
       await Product.findByIdAndUpdate(
         item.product_id, { $inc: { current_stock: item.quantity } }, { session }
       );
     }
 
+    // 2. Tính toán tổng điểm cần hoàn tác (Bao gồm cả điểm âm và dương)
     let pointsToRevert = 0;
     receipt.details.forEach(item => {
       pointsToRevert += (item.gift_points || 0) * item.quantity;
     });
 
-    // Trừ thẳng điểm của khách (Không ghi History nữa)
-    if (pointsToRevert > 0) {
+    // 3. Hoàn điểm (SỬA LỖI TẠI ĐÂY: Dùng !== 0 thay vì > 0)
+    if (pointsToRevert !== 0) {
       await Partner.findByIdAndUpdate(
-        receipt.customer_id, { $inc: { saved_points: -pointsToRevert } }, { session }
+        receipt.customer_id, 
+        { $inc: { saved_points: -pointsToRevert } }, 
+        { session }
       );
     }
 
+    // 4. Xóa phiếu xuất khỏi cơ sở dữ liệu
     await ExportReceipt.deleteOne({ _id: receipt._id }).session(session);
+    
     await session.commitTransaction();
     res.json({ message: 'Đã xóa phiếu xuất và hoàn tác dữ liệu thành công.' });
 
