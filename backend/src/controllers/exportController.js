@@ -3,8 +3,8 @@ import ExportReceipt from '../models/exportModel.js';
 import Product from '../models/productModel.js';
 import Partner from '../models/partnerModel.js';
 import Counter from '../models/counterModel.js';
-import PointsHistory from '../models/pointsHistoryModel.js'; 
 
+// --- HÀM SINH MÃ ---
 export const generateExportCode = async (session = null) => {
   const now = new Date();
   const dateInVietnam = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
@@ -18,6 +18,7 @@ export const generateExportCode = async (session = null) => {
   return `XK-${dateStr}-${String(counter.seq).padStart(3, '0')}`;
 };
 
+// --- TẠO PHIẾU XUẤT ---
 const createExport = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -68,6 +69,7 @@ const createExport = async (req, res) => {
       });
     }
 
+    // Cộng thẳng điểm cho khách (không ghi History nữa)
     let updatedCustomer = customer;
     if (totalPointsChange !== 0) {
       updatedCustomer = await Partner.findByIdAndUpdate(
@@ -86,20 +88,8 @@ const createExport = async (req, res) => {
     });
     const savedReceipt = await exportReceipt.save({ session });
 
-    if (totalPointsChange !== 0) {
-      const history = new PointsHistory({
-        partner_id: customer_id,
-        amount: totalPointsChange,
-        type: totalPointsChange > 0 ? 'plus' : 'minus',
-        reason: `Tích điểm từ đơn hàng ${code}`,
-        reference_id: savedReceipt._id,
-        balance_snapshot: updatedCustomer.saved_points
-      });
-      await history.save({ session });
-    }
-
     await session.commitTransaction();
-    res.status(201).json({ receipt: savedReceipt, message: 'Xuất kho và tích điểm thành công!' });
+    res.status(201).json({ receipt: savedReceipt, message: 'Xuất kho thành công!' });
 
   } catch (error) {
     await session.abortTransaction();
@@ -110,6 +100,7 @@ const createExport = async (req, res) => {
   }
 };
 
+// --- CẬP NHẬT PHIẾU XUẤT ---
 const updateExport = async (req, res) => {
     try {
         const { note, hide_price } = req.body;
@@ -120,6 +111,7 @@ const updateExport = async (req, res) => {
     } catch (error) { res.status(500).json({ message: error.message }); }
 };
 
+// --- XÓA PHIẾU XUẤT ---
 const deleteExport = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -139,20 +131,11 @@ const deleteExport = async (req, res) => {
       pointsToRevert += (item.gift_points || 0) * item.quantity;
     });
 
+    // Trừ thẳng điểm của khách (Không ghi History nữa)
     if (pointsToRevert > 0) {
-      const updatedCustomer = await Partner.findByIdAndUpdate(
-        receipt.customer_id, { $inc: { saved_points: -pointsToRevert } }, { session, new: true }
+      await Partner.findByIdAndUpdate(
+        receipt.customer_id, { $inc: { saved_points: -pointsToRevert } }, { session }
       );
-
-      const history = new PointsHistory({
-        partner_id: receipt.customer_id,
-        amount: -pointsToRevert,
-        type: 'minus',
-        reason: `Hoàn điểm do xóa đơn ${receipt.code}`,
-        reference_id: receipt._id,
-        balance_snapshot: updatedCustomer ? updatedCustomer.saved_points : 0
-      });
-      await history.save({ session });
     }
 
     await ExportReceipt.deleteOne({ _id: receipt._id }).session(session);
@@ -203,7 +186,6 @@ const getExports = async (req, res) => {
     let query = {};
 
     if (search) {
-      // Tìm Khách hàng khớp từ khóa trước
       const matchingCustomers = await Partner.find({
           name: { $regex: search, $options: 'i' },
           type: 'customer'
