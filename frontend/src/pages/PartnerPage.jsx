@@ -105,6 +105,19 @@ const PartnerPage = () => {
 
   const handleSavePartner = async (e) => {
     e.preventDefault();
+
+    // --- KIỂM TRA TRÙNG LẶP NHÃN HÀNG (MỚI THÊM) ---
+    if (formData.type === 'customer' && formData.brand_discounts && formData.brand_discounts.length > 1) {
+      // Chuyển tất cả tên nhãn hàng về in thường và bỏ dấu cách thừa để so sánh cho chuẩn
+      const brands = formData.brand_discounts.map(d => d.brand.trim().toLowerCase());
+      const uniqueBrands = new Set(brands); // Set tự động loại bỏ các phần tử trùng
+      
+      if (brands.length !== uniqueBrands.size) {
+        return toast.error('Lỗi: Bạn đang cấu hình trùng lặp nhãn hàng! Vui lòng kiểm tra lại.');
+      }
+    }
+    // -----------------------------------------------
+
     try {
       if (isEditMode && formData._id) {
         await axiosClient.put(`/partners/${formData._id}`, formData);
@@ -118,7 +131,9 @@ const PartnerPage = () => {
       
       handleClose();
       fetchPartners();
-    } catch (error) { toast.error('Lỗi: ' + (error.response?.data?.message || error.message)); }
+    } catch (error) { 
+      toast.error('Lỗi: ' + (error.response?.data?.message || error.message)); 
+    }
   };
 
   const handleDeletePartner = async (e, id, name) => {

@@ -55,7 +55,7 @@ const ExportPage = () => {
   const [activeIndex, setActiveIndex] = useState(-1);
   // --- STATE IDEMPOTENCY (CHỐNG TRÙNG LẶP) ---
   const [idempotencyKey, setIdempotencyKey] = useState(uuidv4());
-  // Mỗi khi mở Modal để tạo mới, sinh ra một Key mới
+  
   useEffect(() => {
     if (showModal && !isViewMode) {
         setIdempotencyKey(uuidv4());
@@ -74,7 +74,6 @@ const ExportPage = () => {
 
   const handleCloseModal = () => { setIsClosing(true); setTimeout(() => { setShowModal(false); setIsClosing(false); }, 100); };
 
-  // --- API: LẤY MÃ MỚI ---
   const fetchNewCode = async () => {
     try {
       const res = await axiosClient.get('/exports/new-code');
@@ -82,71 +81,51 @@ const ExportPage = () => {
     } catch (error) { console.error(error); }
   };
 
-  // --- LOGIC FORM: LƯU NHÁP & KHÔI PHỤC (Local Storage) ---
   const DRAFT_KEY = 'export_draft_data';
-  // Xóa bỏ dòng DRAFT_CUSTOMER_KEY vì không dùng nữa
 
-  // 1. Lưu nháp (CHỈ LƯU SẢN PHẨM & SỐ LƯỢNG)
   useEffect(() => {
     if (showModal && !isViewMode) {
-       // Chỉ lưu khi có sản phẩm trong giỏ
        if (newExport.details.length > 0) {
-           // Tạo object chỉ chứa danh sách sản phẩm
-           const draftData = {
-               details: newExport.details 
-           };
+           const draftData = { details: newExport.details };
            localStorage.setItem(DRAFT_KEY, JSON.stringify(draftData));
        } else {
-           // Nếu giỏ hàng trống thì xóa nháp cũ đi (để tránh hiện lại rác cũ)
            localStorage.removeItem(DRAFT_KEY);
        }
-       
-       // Xóa bỏ phần lưu selectedCustomerInfo
-       localStorage.removeItem('export_draft_customer'); // Dọn dẹp dữ liệu cũ nếu có
+       localStorage.removeItem('export_draft_customer'); 
     }
-  }, [newExport.details, showModal, isViewMode]); // Chỉ theo dõi sự thay đổi của details
+  }, [newExport.details, showModal, isViewMode]);
 
-  // 2. Khôi phục
   useEffect(() => {
     if (showModal && !isViewMode) {
       const savedDraft = localStorage.getItem(DRAFT_KEY);
-
-      // Mặc định luôn lấy mã mới (vì đây coi như là phiếu mới tinh, chỉ giữ lại list hàng)
       fetchNewCode();
 
       if (savedDraft) {
          try {
              const parsedDraft = JSON.parse(savedDraft);
-             // Nếu trong nháp có sản phẩm
              if (parsedDraft.details && parsedDraft.details.length > 0) {
                  setNewExport(prev => ({
-                     ...INITIAL_EXPORT_STATE, // Reset hết các trường khác về mặc định
-                     code: prev.code,         // Giữ lại mã code vừa tạo hoặc đang loading
-                     details: parsedDraft.details // Chỉ điền sản phẩm vào
+                     ...INITIAL_EXPORT_STATE,
+                     code: prev.code,         
+                     details: parsedDraft.details 
                  }));
-                 
-                 // Đảm bảo thông tin khách hàng trống
                  setSelectedCustomerInfo(null);
-                 
                  toast.info('Đã khôi phục danh sách sản phẩm cũ', { autoClose: 2000 });
              }
          } catch (e) { 
              localStorage.removeItem(DRAFT_KEY); 
          }
       } else {
-          // Nếu không có nháp thì reset về trắng hoàn toàn
           setNewExport(prev => ({ ...INITIAL_EXPORT_STATE, code: prev.code }));
           setSelectedCustomerInfo(null);
       }
     }
   }, [showModal, isViewMode]);
 
-  // --- HÀM LÀM MỚI FORM (RESET) ---
   const handleResetForm = () => {
     if (window.confirm('Bạn có chắc muốn xóa hết sản phẩm để tạo phiếu mới?')) {
         setNewExport(INITIAL_EXPORT_STATE);
         setSelectedCustomerInfo(null);
-        
         setIdempotencyKey(uuidv4());
         fetchNewCode();
         toast.info('Đã làm mới form');
@@ -155,7 +134,6 @@ const ExportPage = () => {
 
   const customerOptions = customers.map(c => ({ value: c._id, label: c.name }));
 
-  // --- USE EFFECT: LOAD DATA ---
   useEffect(() => {
     const loadData = async () => { if (!globalCache.exports || refreshFlags.exports) { try { setLoading(true); const res = await axiosClient.get('/exports'); setExports(res); updateCache('exports', res); } catch (error) { console.error(error); } finally { setLoading(false); } } };
     loadData();
@@ -173,23 +151,17 @@ const ExportPage = () => {
     const saleName = 'Phan Thành Tiến - 0387.645.618';
     const note = item.note || '';
     
-    // --- LOGIC TÍNH ĐIỂM SỬA ĐỔI ---
     const totalPointsThisBill = item.details.reduce((sum, d) => sum + (d.quantity * (d.gift_points || 0)), 0);
     let finalPoints = 0;
     let startPoints = 0;
 
     if (item.partner_points_snapshot !== undefined && item.partner_points_snapshot !== null) {
-        // TRƯỜNG HỢP 1: XEM PHIẾU CŨ (Đã có lưu snapshot điểm lúc tạo)
-        // Snapshot chính là Điểm Cuối Kỳ lúc đó
         finalPoints = item.partner_points_snapshot;
         startPoints = finalPoints - totalPointsThisBill; 
     } else {
-        // TRƯỜNG HỢP 2: TẠO PHIẾU MỚI (Hoặc phiếu cũ quá chưa có snapshot)
-        // Lấy điểm hiện tại của khách làm Điểm Đầu Kỳ
         startPoints = item.customer_id?.saved_points || 0;
         finalPoints = startPoints + totalPointsThisBill;
     }
-    // -------------------------------
 
     let totalQty = 0; let totalRawAmount = 0;
     const cssConfig = isImageExport ? { tableStyle: 'border-collapse: separate; border-spacing: 0; border-top: 1px solid #000; border-left: 1px solid #000;', cellBorder: 'border-right: 1px solid #000; border-bottom: 1px solid #000; border-top: none; border-left: none;', paddingTD: 'padding-top: 0px !important; padding-bottom: 12px !important; padding-right: 4px;', paddingTH: 'padding-top: 0px !important; padding-bottom: 10px !important;', lineHeight: '1.1', productNamePadding: 'padding-left: 5px !important;' } : { tableStyle: 'border-collapse: collapse; border: none;', cellBorder: 'border: 1px solid #000;', paddingTD: 'padding: 5px 4px;', paddingTH: 'padding: 5px 4px;', lineHeight: '1.3', productNamePadding: 'padding-left: 5px;' };
@@ -198,7 +170,6 @@ const ExportPage = () => {
     let totalRow = ''; if (!hidePrice) { totalRow = `<tr style="font-weight:bold;"><td colspan="4" style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">TỔNG</td><td style="text-align:center; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatNumber(totalQty)}</td><td style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatCurrency(totalRawAmount)}</td><td style="${cssConfig.cellBorder} ${cssConfig.paddingTD}"></td><td style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatCurrency(item.total_amount)}</td><td style="text-align:center; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${totalPointsThisBill > 0 ? '+' : ''}${totalPointsThisBill}</td></tr>`; } else { totalRow = `<tr style="font-weight:bold;"><td colspan="3" style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">TỔNG</td><td style="text-align:center; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatNumber(totalQty)}</td><td style="text-align:center; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${totalPointsThisBill > 0 ? '+' : ''}${totalPointsThisBill}</td></tr>`; }
     const totalAmountText = !hidePrice ? `<div style="font-weight:bold; text-transform:uppercase; text-align:right; font-size: 14px;">TỔNG TIỀN PHẢI THANH TOÁN: ${formatCurrency(item.total_amount)}VNĐ</div>` : '';
     
-    // Hiển thị: Điểm còn gửi: [Điểm Cuối] ([Điểm Đầu] + [Điểm Phiếu])
     return `<style>.print-container { font-family: "Times New Roman", Times, serif; font-size: 13px; color: #000; background: white; line-height: ${cssConfig.lineHeight}; padding: 20px; } .print-container table { font-size: 14px; width: 100%; ${cssConfig.tableStyle} margin-bottom: 5px; } .print-container th, .print-container td { vertical-align: middle !important; } .print-container th { text-align: center; font-weight: bold; background-color: #ffffff; ${isImageExport ? 'height: 40px;' : ''} } .print-container .no-border td { border: none !important; padding: 2px 0 !important; vertical-align: top !important; } .print-container .header-title { text-align: center; margin-bottom: 5px; margin-top: 10px; } .print-container .header-title h2 { margin-bottom: 1px; margin-top: 5px; font-size: 20px; text-transform: uppercase; font-weight: bold; } .print-container strong { font-weight: bold; } .print-container i { font-style: italic; } </style> <div class="print-container"> <table class="no-border" style="width:100%; margin-bottom:0px; border: none !important;"> <tr> <td style="font-size:14px; line-height: 1.3; width:65%;"> <strong style="text-transform: uppercase;">NPP LÂM ANH</strong><br> Mã số thuế: 1801790506<br> Địa chỉ: 430B, KV1, P. Cái Răng, TP. Cần Thơ </td> <td style="font-size:14px; width:35%; text-align:right;"> Số phiếu: <strong>${item.code}</strong> </td> </tr> </table> <div class="header-title"><h2>PHIẾU GIAO HÀNG</h2><i>${formatDate(item.date)}</i></div> <table class="no-border" style="width:100%; margin-bottom:10px; border: none !important;"> <tr> <td style="width: 58%; padding-left: 40px !important;"><strong>Khách hàng:</strong> ${customerName}</td> <td style="width: 42%; padding-right: 40px !important;"><strong>Điện thoại:</strong> ${customerPhone}</td> </tr> <tr> <td style="padding-left: 40px !important;"><strong>Địa chỉ:</strong> ${customerAddress}</td> <td style="padding-right: 10px !important;"><strong>Sale:</strong> ${saleName}</td> </tr> </table> <table> <thead>${tableHeader}</thead> <tbody>${productRows}${totalRow}</tbody> </table> <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-top: 15px;"> <div style="font-size: 13px; flex: 1;"> <strong>Điểm còn gửi:</strong> ${formatNumber(finalPoints)} <i style="margin-left: 5px;"> (${formatNumber(startPoints)} ${totalPointsThisBill >= 0 ? '+' : ''} ${formatNumber(totalPointsThisBill)}) </i> </div> <div style="flex: 1; text-align: right;">${totalAmountText}</div> </div> <div style="margin-top: 1px;"><strong>Ghi chú:</strong> ${note}</div> <table class="no-border" style="width:100%; margin-top: 20px; text-align: center; border: none !important;"> <tr> <td style="width: 33%; text-align: center !important;"><strong>Người lập phiếu</strong></td> <td style="width: 33%; text-align: center !important;"><strong>Người giao hàng</strong></td> <td style="width: 33%; text-align: center !important;"><strong>Người nhận hàng</strong></td> </tr> </table> </div>`;
   };
 
@@ -211,7 +182,7 @@ const ExportPage = () => {
     const customerName = item.customer_id?.name || 'Khách lẻ';
     const customerPhone = item.customer_id?.phone || '';
     const customerAddress = item.customer_id?.address || '';
-    const saleName = 'Phan Thành Tiến - 0387.645.618'; // Hoặc lấy từ user đăng nhập
+    const saleName = 'Phan Thành Tiến - 0387.645.618';
     const createdDate = new Date(item.date);
     const dateStr = `Ngày ${createdDate.getDate()} tháng ${createdDate.getMonth() + 1} năm ${createdDate.getFullYear()}`;
     
@@ -223,26 +194,12 @@ const ExportPage = () => {
                       ? item.partner_points_snapshot - totalPoints 
                       : (item.customer_id?.saved_points || 0) - totalPoints;
 
-    // --- ĐỊNH NGHĨA STYLE ---
-    const styleBorder = {
-        top: { style: "thin" },
-        bottom: { style: "thin" },
-        left: { style: "thin" },
-        right: { style: "thin" }
-    };
+    const styleBorder = { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } };
     const styleCenter = { alignment: { horizontal: "center", vertical: "center" } };
     const styleBold = { font: { bold: true } };
-    const styleHeaderTable = { 
-        font: { bold: true }, 
-        alignment: { horizontal: "center", vertical: "center", wrapText: true },
-        border: styleBorder,
-        fill: { fgColor: { rgb: "EFEFEF" } } // Màu nền xám nhẹ
-    };
+    const styleHeaderTable = { font: { bold: true }, alignment: { horizontal: "center", vertical: "center", wrapText: true }, border: styleBorder, fill: { fgColor: { rgb: "EFEFEF" } } };
     const styleCellBorder = { border: styleBorder };
-    const styleCellBorderCenter = { border: styleBorder, alignment: { horizontal: "center" } };
-    const styleCellBorderRight = { border: styleBorder, alignment: { horizontal: "right" } };
 
-    // 2. Xây dựng dữ liệu (WS_DATA)
     const ws_data = [
         ["NPP LÂM ANH", "", "", "", "", "", "", "Số phiếu:", item.code],
         ["Mã số thuế: 1801790506"], 
@@ -257,56 +214,27 @@ const ExportPage = () => {
         [], 
     ];
 
-    // Xác định dòng bắt đầu của bảng (Header Table nằm ở dòng index 11 - tức dòng 12 trong excel)
     const tableHeaderRowIndex = 11;
-
-    // --- Header Bảng ---
     let tableHead = ["STT", "Tên sản phẩm", "ĐVT"];
-    if (!hidePrice) {
-        tableHead.push("Đơn giá", "SL", "Tiền hàng", "CK(%)", "Thành tiền");
-    } else {
-        tableHead.push("SL");
-    }
+    if (!hidePrice) { tableHead.push("Đơn giá", "SL", "Tiền hàng", "CK(%)", "Thành tiền"); } else { tableHead.push("SL"); }
     tableHead.push("Điểm quà");
     ws_data.push(tableHead);
 
-    // --- Dữ liệu chi tiết ---
     item.details.forEach((d, index) => {
-        let row = [
-            index + 1,
-            d.product_name_backup,
-            d.unit
-        ];
-        if (!hidePrice) {
-            row.push(d.export_price, d.quantity, d.export_price * d.quantity, d.discount ? d.discount + '%' : '', d.total);
-        } else {
-            row.push(d.quantity);
-        }
+        let row = [ index + 1, d.product_name_backup, d.unit ];
+        if (!hidePrice) { row.push(d.export_price, d.quantity, d.export_price * d.quantity, d.discount ? d.discount + '%' : '', d.total); } else { row.push(d.quantity); }
         row.push(d.quantity * (d.gift_points || 0));
         ws_data.push(row);
     });
 
-    // --- Dòng Tổng cộng ---
     let totalRow = ["", "TỔNG CỘNG", ""];
-    if (!hidePrice) {
-        totalRow.push("", totalQty, totalRawPrice, "", item.total_amount);
-    } else {
-        totalRow.push(totalQty);
-    }
+    if (!hidePrice) { totalRow.push("", totalQty, totalRawPrice, "", item.total_amount); } else { totalRow.push(totalQty); }
     totalRow.push(totalPoints);
     ws_data.push(totalRow);
 
-    // --- Footer Chữ ký ---
     ws_data.push([]);
-    
-    // Dòng thông tin điểm và tổng tiền bằng chữ
     let footerInfo = [`Điểm còn gửi: ${oldPoints} + ${totalPoints} = ${oldPoints + totalPoints}`];
     if(!hidePrice) {
-        // Đẩy sang phải để khớp cột
-        const spacer = ["", "", "", "", "", "TỔNG THANH TOÁN:", item.total_amount]; 
-        // Nối mảng footerInfo với spacer
-        footerInfo = footerInfo.concat(spacer.slice(1)); // Hack nhẹ để nối mảng
-        // Nhưng cách tốt nhất là gán trực tiếp vào row
         ws_data.push([`Điểm còn gửi: ${oldPoints} + ${totalPoints} = ${oldPoints + totalPoints}`, "", "", "", "", "", "TỔNG THANH TOÁN:", item.total_amount]);
     } else {
         ws_data.push(footerInfo);
@@ -315,100 +243,54 @@ const ExportPage = () => {
     ws_data.push([]);
     ws_data.push(["", "Người lập phiếu", "", "", "Người giao hàng", "", "", "Người nhận hàng"]);
 
-    // --- TẠO WORKSHEET ---
     const ws = XLSX.utils.aoa_to_sheet(ws_data);
-
-    // 3. ÁP DỤNG STYLE (QUAN TRỌNG NHẤT)
     const range = XLSX.utils.decode_range(ws['!ref']);
     
-    // Duyệt qua từng ô để gán style
     for (let R = range.s.r; R <= range.e.r; ++R) {
         for (let C = range.s.c; C <= range.e.c; ++C) {
             const cell_address = XLSX.utils.encode_cell({ r: R, c: C });
-            if (!ws[cell_address]) continue; // Bỏ qua ô trống không có dữ liệu
+            if (!ws[cell_address]) continue; 
 
-            // A. Style cho Tiêu đề lớn "PHIẾU GIAO HÀNG" (Dòng 5 -> index 4)
-            if (R === 4) {
-                ws[cell_address].s = { font: { bold: true, sz: 16 }, alignment: { horizontal: "center" } };
-            }
-            // B. Style cho Ngày tháng (Dòng 6 -> index 5)
-            else if (R === 5) {
-                ws[cell_address].s = { font: { italic: true }, alignment: { horizontal: "center" } };
-            }
-            // C. Style cho Header Bảng (Dòng 12 -> index 11)
-            else if (R === tableHeaderRowIndex) {
-                ws[cell_address].s = styleHeaderTable;
-            }
-            // D. Style cho Nội dung Bảng + Dòng Tổng cộng
+            if (R === 4) { ws[cell_address].s = { font: { bold: true, sz: 16 }, alignment: { horizontal: "center" } }; }
+            else if (R === 5) { ws[cell_address].s = { font: { italic: true }, alignment: { horizontal: "center" } }; }
+            else if (R === tableHeaderRowIndex) { ws[cell_address].s = styleHeaderTable; }
             else if (R > tableHeaderRowIndex && R <= tableHeaderRowIndex + item.details.length + 1) {
-                // Kiểm tra xem đây là dòng dữ liệu hay dòng tổng cộng
                 const isTotalRow = R === (tableHeaderRowIndex + item.details.length + 1);
-                
-                // Style cơ bản là có viền
                 let cellStyle = { ...styleCellBorder };
-                
-                if (isTotalRow) {
-                    cellStyle.font = { bold: true }; // Dòng tổng in đậm
-                }
-
-                // Căn lề theo loại dữ liệu
-                if (C === 0 || C === 2) { // STT, ĐVT: Căn giữa
-                     cellStyle.alignment = { horizontal: "center" };
-                } else if (C === 1) { // Tên SP: Căn trái
-                     cellStyle.alignment = { horizontal: "left" };
-                } else { // Các cột số (Tiền, SL...): Căn phải
-                     cellStyle.alignment = { horizontal: "right" };
-                }
-                
+                if (isTotalRow) { cellStyle.font = { bold: true }; }
+                if (C === 0 || C === 2) { cellStyle.alignment = { horizontal: "center" }; } else if (C === 1) { cellStyle.alignment = { horizontal: "left" }; } else { cellStyle.alignment = { horizontal: "right" }; }
                 ws[cell_address].s = cellStyle;
             }
-            // E. Style cho Footer Tổng thanh toán (In đậm, Căn phải, Size to)
-            else if (R === tableHeaderRowIndex + item.details.length + 3) { // Dòng sau dòng trống
+            else if (R === tableHeaderRowIndex + item.details.length + 3) { 
                  if(C >= 6) ws[cell_address].s = { font: { bold: true, sz: 12 }, alignment: { horizontal: "right" } };
             }
         }
     }
 
-    // 4. Cấu hình độ rộng cột (!cols)
-    const wscols = !hidePrice ? [
-        { wch: 5 },  // A: STT
-        { wch: 30 }, // B: Tên SP
-        { wch: 8 },  // C: ĐVT
-        { wch: 10 }, // D: Đơn giá
-        { wch: 6 },  // E: SL
-        { wch: 12 }, // F: Tiền hàng
-        { wch: 6 },  // G: CK
-        { wch: 12 }, // H: Thành tiền
-        { wch: 8 }   // I: Điểm
-    ] : [
-        { wch: 5 }, { wch: 40 }, { wch: 10 }, { wch: 10 }, { wch: 10 }
-    ];
+    const wscols = !hidePrice ? [ { wch: 5 }, { wch: 30 }, { wch: 8 }, { wch: 10 }, { wch: 6 }, { wch: 12 }, { wch: 6 }, { wch: 12 }, { wch: 8 } ] : [ { wch: 5 }, { wch: 40 }, { wch: 10 }, { wch: 10 }, { wch: 10 } ];
     ws['!cols'] = wscols;
 
-    // 5. Cấu hình gộp ô (!merges)
     const lastCol = !hidePrice ? 8 : 4; 
     ws['!merges'] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } }, // NPP Lâm Anh
-        { s: { r: 1, c: 0 }, e: { r: 1, c: 4 } }, // MST
-        { s: { r: 2, c: 0 }, e: { r: 2, c: 4 } }, // Địa chỉ
-        { s: { r: 0, c: 7 }, e: { r: 0, c: 7 } }, // Label "Số phiếu:"
-        { s: { r: 0, c: 8 }, e: { r: 0, c: lastCol } }, // Giá trị Code
-        { s: { r: 4, c: 0 }, e: { r: 4, c: lastCol } }, // PHIẾU GIAO HÀNG (Căn giữa vùng)
-        { s: { r: 5, c: 0 }, e: { r: 5, c: lastCol } }, // Ngày tháng
-        { s: { r: 7, c: 1 }, e: { r: 7, c: 5 } }, // Tên Khách
-        { s: { r: 7, c: 7 }, e: { r: 7, c: lastCol } }, // SĐT
-        { s: { r: 8, c: 1 }, e: { r: 8, c: 5 } }, // Địa chỉ Khách
-        { s: { r: 8, c: 7 }, e: { r: 8, c: lastCol } }, // Tên Sale
-        { s: { r: 9, c: 1 }, e: { r: 9, c: lastCol } }, // Ghi chú
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } }, 
+        { s: { r: 1, c: 0 }, e: { r: 1, c: 4 } }, 
+        { s: { r: 2, c: 0 }, e: { r: 2, c: 4 } }, 
+        { s: { r: 0, c: 7 }, e: { r: 0, c: 7 } }, 
+        { s: { r: 0, c: 8 }, e: { r: 0, c: lastCol } }, 
+        { s: { r: 4, c: 0 }, e: { r: 4, c: lastCol } }, 
+        { s: { r: 5, c: 0 }, e: { r: 5, c: lastCol } }, 
+        { s: { r: 7, c: 1 }, e: { r: 7, c: 5 } }, 
+        { s: { r: 7, c: 7 }, e: { r: 7, c: lastCol } }, 
+        { s: { r: 8, c: 1 }, e: { r: 8, c: 5 } }, 
+        { s: { r: 8, c: 7 }, e: { r: 8, c: lastCol } }, 
+        { s: { r: 9, c: 1 }, e: { r: 9, c: lastCol } }, 
     ];
 
-    // 6. Xuất file
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "PhieuXuat");
     XLSX.writeFile(wb, `Phieu_${item.code}.xlsx`);
   };
 
-  // --- XỬ LÝ DỮ LIỆU & PHÂN TRANG (GIỮ NGUYÊN) ---
   const getProcessedExports = () => { let result = [...exports]; if (searchTerm) { const lowerTerm = searchTerm.toLowerCase().trim(); result = result.filter(item => { const matchCode = item.code?.toLowerCase().includes(lowerTerm); const matchCustomer = item.customer_id?.name?.toLowerCase().includes(lowerTerm); const matchNote = item.note?.toLowerCase().includes(lowerTerm); const dateStr = new Date(item.date).toLocaleDateString('vi-VN'); const matchDate = dateStr.includes(lowerTerm); const matchProduct = item.details?.some(d => d.product_name_backup?.toLowerCase().includes(lowerTerm) || d.sku?.toLowerCase().includes(lowerTerm)); return matchCode || matchCustomer || matchNote || matchDate || matchProduct; }); } return result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)); };
   const processedExports = getProcessedExports();
   const indexOfLastItem = currentPage * itemsPerPage;
@@ -427,11 +309,10 @@ const ExportPage = () => {
     try { 
         setIsSubmitting(true); 
         
-        // Gửi kèm idempotency_key
         const payload = { 
             ...newExport, 
             total_amount: calculateTotalAmount(),
-            idempotency_key: idempotencyKey // <--- THÊM DÒNG NÀY
+            idempotency_key: idempotencyKey
         };
 
         await axiosClient.post('/exports', payload);
@@ -443,15 +324,11 @@ const ExportPage = () => {
         
         setNewExport(INITIAL_EXPORT_STATE);
         setSelectedCustomerInfo(null);
-        
-        // Lưu thành công rồi thì tạo Key mới cho lần sau
         setIdempotencyKey(uuidv4()); 
 
         handleCloseModal();
         fetchData();
     } catch (error) { 
-        // QUAN TRỌNG: Nếu lỗi, KHÔNG tạo key mới. 
-        // Để người dùng bấm "Lưu" lại, Server sẽ biết là request cũ gửi lại.
         toast.error('Lỗi: ' + (error.response?.data?.message || error.message));
     } finally { 
         setIsSubmitting(false); 
@@ -461,32 +338,51 @@ const ExportPage = () => {
   const handleUpdateNote = async () => { try { await axiosClient.put(`/exports/${newExport._id}`, { note: newExport.note, hide_price: newExport.hide_price }); fetchData(); } catch (error) { toast.error('Lỗi cập nhật: ' + error.message); } };
   const handleDeleteExport = async (e, id, code) => { e.stopPropagation(); if (window.confirm(`Xóa phiếu ${code}?`)) { try { await axiosClient.delete(`/exports/${id}`); toast.success('Đã xóa'); triggerRefresh(['exports', 'products', 'debts', 'dashboard', 'partners']); fetchData(); } catch (error) { toast.error('Lỗi xóa: ' + error.message); } } };
   const handleRowClick = (item) => { setNewExport({ _id: item._id, code: item.code, customer_id: item.customer_id?._id || '', note: item.note || '', payment_due_date: toInputDate(item.payment_due_date), hide_price: item.hide_price || false, details: item.details || [], date: item.date, total_amount: item.total_amount, partner_points_snapshot: item.partner_points_snapshot }); const oldCustomer = customers.find(c => c._id === (item.customer_id?._id || item.customer_id)); setSelectedCustomerInfo(oldCustomer); setIsViewMode(true); setShowModal(true); };
-  const handleCustomerChange = (customerId) => { const customer = customers.find(c => c._id === customerId); if (customer) { setSelectedCustomerInfo(customer); setNewExport(prev => ({ ...prev, customer_id: customerId, hide_price: customer.hide_price || false, apply_wholesale: customer.is_wholesale || false })); recalculatePrices(customer.is_wholesale || false); } else { setSelectedCustomerInfo(null); setNewExport(prev => ({ ...prev, customer_id: '', apply_wholesale: false })); } };
-  const recalculatePrices = (isWholesale) => { 
+  
+  // --- THAY ĐỔI 1: Khi đổi khách hàng, truyền object Khách hàng vào hàm tính lại giá ---
+  const handleCustomerChange = (customerId) => { 
+      const customer = customers.find(c => c._id === customerId); 
+      if (customer) { 
+          setSelectedCustomerInfo(customer); 
+          setNewExport(prev => ({ ...prev, customer_id: customerId, hide_price: customer.hide_price || false, apply_wholesale: customer.is_wholesale || false })); 
+          recalculatePrices(customer); // <-- Truyền toàn bộ object customer vào
+      } else { 
+          setSelectedCustomerInfo(null); 
+          setNewExport(prev => ({ ...prev, customer_id: '', apply_wholesale: false })); 
+          recalculatePrices(null);
+      } 
+  };
+  
+  // --- THAY ĐỔI 2: Logic tính lại giá thông minh ---
+  const recalculatePrices = (customer) => { 
     setNewExport(prev => { 
         const newDetails = prev.details.map(item => { 
             const product = products.find(p => p._id === item.product_id); 
             if (!product) return item; 
             
-            // --- SỬA ĐỔI ---
             const originalPrice = product.export_price || 0;
             
-            // Nếu là khách sỉ -> Lấy % từ DB. Khách lẻ -> 0%
-            const newDiscount = isWholesale ? (product.discount_percent || 0) : 0;
+            // LOGIC LẤY CHIẾT KHẤU TỰ ĐỘNG
+            let newDiscount = 0;
+            // 1. Tìm xem khách có cấu hình nhãn hàng này không
+            const brandConfig = customer?.brand_discounts?.find(d => d.brand === product.brand);
+            if (brandConfig) {
+                newDiscount = brandConfig.discount_percent; // Lấy theo Nhãn hàng
+            } else if (customer?.is_wholesale) {
+                newDiscount = product.discount_percent || 0; // Lấy theo Sỉ mặc định
+            }
             
             return { 
                 ...item, 
-                export_price: originalPrice, // Luôn reset về giá gốc
-                discount: newDiscount,       // Cập nhật cột %
-                total: calculateLineTotal(item.quantity, originalPrice, newDiscount) // Tính lại tổng
+                export_price: originalPrice, 
+                discount: newDiscount,       
+                total: calculateLineTotal(item.quantity, originalPrice, newDiscount) 
             }; 
         }); 
         return { ...prev, details: newDetails }; 
     }); 
   };
-  const getPriceForProduct = (product) => { let price = product.export_price || 0; if (newExport.apply_wholesale) { const discount = product.discount_percent || 0; price = price * (1 - discount / 100); } return price; };
   
-  // --- XỬ LÝ IMPORT EXCEL (MỚI) ---
   const handleDownloadTemplate = () => {
     const templateData = [['Tên sản phẩm', 'Số lượng'], ['Sữa Ông Thọ', 10], ['Bánh Mì', 5]];
     const ws = XLSX.utils.aoa_to_sheet(templateData);
@@ -495,6 +391,7 @@ const ExportPage = () => {
     XLSX.writeFile(wb, "Mau_Xuat_Kho.xlsx");
   };
 
+  // --- THAY ĐỔI 3: Cập nhật logic Excel ---
   const handleImportExcel = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -520,26 +417,25 @@ const ExportPage = () => {
 
           if (!productName) continue;
 
-          // Tìm sản phẩm
           const product = products.find(p => p.name.toLowerCase() === productName.toLowerCase());
 
           if (product) {
-            // Kiểm tra tồn kho
             if (product.current_stock <= 0) {
                 notFoundProducts.push(`${productName} (Hết hàng)`);
                 continue;
             }
 
-            // 1. Lấy giá gốc (Chưa trừ tiền)
             const originalPrice = product.export_price || 0;
 
-            // 2. Tính % chiết khấu tự động (theo logic Khách sỉ/Lẻ)
+            // LOGIC TỰ ĐỘNG LẤY CHIẾT KHẤU TỪ EXCEL
             let autoDiscount = 0;
-            if (newExport.apply_wholesale) {
+            const brandConfig = selectedCustomerInfo?.brand_discounts?.find(d => d.brand === product.brand);
+            if (brandConfig) {
+                autoDiscount = brandConfig.discount_percent;
+            } else if (newExport.apply_wholesale) {
                 autoDiscount = product.discount_percent || 0;
             }
 
-            // 3. Tính số lượng hợp lệ
             const finalQuantity = Math.min(quantity, product.current_stock);
             const qty = finalQuantity > 0 ? finalQuantity : 1;
 
@@ -582,27 +478,25 @@ const ExportPage = () => {
   };
 
   const preventNumberInputScroll = (e) => {
-    // Chặn cuộn chuột: Khi lăn chuột, lập tức bỏ focus khỏi ô input
     if (e.type === 'wheel') {
         e.target.blur();
     }
   };
 
+  // --- THAY ĐỔI 4: Thêm sản phẩm trực tiếp từ ô search ---
   const addProductToExport = (product) => { 
     if (product.current_stock <= 0) { return toast.error(`Sản phẩm ${product.name} đã hết hàng!`); } 
     
-    // --- SỬA ĐỔI: Lấy giá gốc và % giảm giá từ DB ---
-    
-    // 1. Luôn lấy giá gốc (không tự động trừ tiền ở đây nữa)
     const originalPrice = product.export_price || 0; 
     
-    // 2. Lấy % giảm giá từ DB (như trong ảnh của bạn là 6.25)
-    // Logic: Nếu khách sỉ (apply_wholesale) thì lấy % trong DB, nếu khách lẻ thì 0 (hoặc tùy bạn muốn luôn lấy)
+    // LOGIC TỰ ĐỘNG ĐIỀN CHIẾT KHẤU KHI CHỌN TỪ SEARCH
     let autoDiscount = 0;
-    if (newExport.apply_wholesale) {
-        autoDiscount = product.discount_percent || 0;
+    const brandConfig = selectedCustomerInfo?.brand_discounts?.find(d => d.brand === product.brand);
+    if (brandConfig) {
+        autoDiscount = brandConfig.discount_percent; // Khách có cấu hình NHÃN HÀNG này
+    } else if (newExport.apply_wholesale) {
+        autoDiscount = product.discount_percent || 0; // Khách không có, nhưng là khách SỈ
     }
-    // Lưu ý: Nếu bạn muốn sản phẩm này LUÔN LUÔN giảm giá cho mọi khách, bỏ dòng if check ở trên đi.
 
     const newItem = { 
         product_id: product._id, 
@@ -610,12 +504,9 @@ const ExportPage = () => {
         sku: product.sku, 
         unit: product.unit, 
         quantity: 1, 
-        export_price: originalPrice, // Giữ nguyên giá 175.500
+        export_price: originalPrice, 
         gift_points: product.gift_points || 0,
-        
-        discount: autoDiscount, // <--- Tự động điền 6.25 vào đây
-        
-        // Tính thành tiền: Giá gốc * (1 - 6.25%)
+        discount: autoDiscount, 
         total: calculateLineTotal(1, originalPrice, autoDiscount) 
     }; 
     
@@ -628,11 +519,8 @@ const ExportPage = () => {
 
   const updateDetail = (index, field, value) => {
     const updatedDetails = [...newExport.details];
-    
-    // 1. Cho phép gán chuỗi rỗng '' vào state
     const val = value === '' ? '' : Number(value);
 
-    // 2. Kiểm tra tồn kho (Logic riêng của ExportPage)
     if (field === 'quantity') {
       const product = products.find(p => p._id === updatedDetails[index].product_id);
       if (!isViewMode && product && val !== '' && val > product.current_stock) {
@@ -645,10 +533,8 @@ const ExportPage = () => {
       }
     }
 
-    // 3. Cập nhật giá trị vào biến tạm
     updatedDetails[index][field] = val;
 
-    // 4. Tính toán Total an toàn (coi '' là 0)
     const qty = field === 'quantity' ? (val === '' ? 0 : val) : (updatedDetails[index].quantity === '' ? 0 : updatedDetails[index].quantity);
     const price = field === 'export_price' ? (val === '' ? 0 : val) : (updatedDetails[index].export_price === '' ? 0 : updatedDetails[index].export_price);
     const discount = updatedDetails[index].discount || 0;
@@ -661,7 +547,6 @@ const ExportPage = () => {
   const handleBlur = (index, field) => {
     const item = newExport.details[index];
 
-    // Xử lý khi ô trống
     if (item[field] === '') {
         const updatedDetails = [...newExport.details];
         updatedDetails[index][field] = 0;
@@ -674,13 +559,11 @@ const ExportPage = () => {
         setNewExport({ ...newExport, details: updatedDetails });
     }
     
-    // SỬA: Xử lý làm tròn Đơn Giá khi người dùng nhập số lẻ rồi bấm ra ngoài
     if (field === 'export_price' && typeof item[field] === 'number') {
          const updatedDetails = [...newExport.details];
          updatedDetails[index][field] = Math.round(item[field]);
-         // Tính lại total luôn cho chắc
          const qty = updatedDetails[index].quantity;
-         const price = updatedDetails[index][field]; // Giá đã làm tròn
+         const price = updatedDetails[index][field]; 
          const discount = updatedDetails[index].discount || 0;
          updatedDetails[index].total = calculateLineTotal(qty, price, discount);
          setNewExport({ ...newExport, details: updatedDetails });
@@ -699,7 +582,7 @@ const ExportPage = () => {
   useEffect(() => {
     if (!isSearchFocus && productSearch.trim() === '') {
       setFilteredProducts([]);
-      setActiveIndex(-1); // Reset khi rỗng
+      setActiveIndex(-1); 
       return;
     }
     
@@ -800,10 +683,8 @@ const handleKeyDown = (e) => {
                           if (item.total_amount === 0) {
                             return <div className="text-xs text-gray-400 mt-1 italic font-normal">---</div>;
                           }
-                          // Cách 1: Ưu tiên lấy tổng lãi ĐÃ LƯU trong DB (Nhanh, Chính xác)
                           let profit = item.details.reduce((sum, d) => sum + (d.profit || 0), 0);
 
-                          // Cách 2: Nếu là đơn cũ (chưa có trường profit), dùng logic tính lại (Backup)
                           const hasStoredProfit = item.details.some(d => d.profit !== undefined);
                           
                           if (!hasStoredProfit) {
@@ -1014,12 +895,10 @@ const handleKeyDown = (e) => {
                       let hasCustomer = false;
 
                       if (isViewMode && newExport.partner_points_snapshot !== undefined && newExport.partner_points_snapshot !== null) {
-                          // A. CHẾ ĐỘ XEM (Có snapshot): Tính ngược
                           hasCustomer = true;
                           finalPoints = newExport.partner_points_snapshot;
                           startPoints = finalPoints - totalPoints;
                       } else if (selectedCustomerInfo) {
-                          // B. CHẾ ĐỘ TẠO (Hoặc xem phiếu legacy): Tính xuôi từ điểm hiện tại
                           hasCustomer = true;
                           startPoints = selectedCustomerInfo.saved_points || 0;
                           finalPoints = startPoints + totalPoints;
@@ -1038,7 +917,6 @@ const handleKeyDown = (e) => {
                               </>
                           );
                       } else {
-                          // Chưa chọn khách
                           return (
                               <>
                                 <span className="text-sm">Tổng điểm phiếu:</span>
