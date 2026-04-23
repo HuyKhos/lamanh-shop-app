@@ -3,14 +3,12 @@ import ImportReceipt from '../models/importModel.js';
 import ExportReceipt from '../models/exportModel.js';
 
 // @desc    Tạo sản phẩm mới
-// @route   POST /api/products
 const createProduct = async (req, res) => {
   try {
     const { 
-      sku, name, brand, unit, // <-- Thêm brand ở đây
+      sku, name, brand, unit,
       import_price, export_price, 
-      discount_percent, gift_points, 
-      min_stock 
+      discount_percent, gift_points, min_stock 
     } = req.body;
 
     if (!name) {
@@ -18,7 +16,7 @@ const createProduct = async (req, res) => {
     }
 
     const product = new Product({
-      sku, name, brand, unit, // <-- Thêm brand ở đây
+      sku, name, brand, unit,
       import_price, export_price,
       discount_percent, gift_points, min_stock
     });
@@ -27,24 +25,20 @@ const createProduct = async (req, res) => {
     res.status(201).json(createdProduct);
     
   } catch (error) {
-    if (error.code === 11000) {
-      if (error.keyPattern.sku) {
-        return res.status(400).json({ message: `Mã sản phẩm "${req.body.sku}" đã tồn tại! Vui lòng chọn mã khác.` });
-      }
+    if (error.code === 11000 && error.keyPattern.sku) {
+      return res.status(400).json({ message: `Mã sản phẩm "${req.body.sku}" đã tồn tại! Vui lòng chọn mã khác.` });
     }
     res.status(500).json({ message: 'Lỗi Server: ' + error.message });
   }
 };
 
 // @desc    Cập nhật sản phẩm
-// @route   PUT /api/products/:id
 const updateProduct = async (req, res) => {
   try {
     const { 
-      sku, name, brand, unit, // <-- Thêm brand ở đây
+      sku, name, brand, unit,
       import_price, export_price, 
-      discount_percent, gift_points, 
-      min_stock
+      discount_percent, gift_points, min_stock
     } = req.body;
 
     const product = await Product.findById(req.params.id);
@@ -52,7 +46,7 @@ const updateProduct = async (req, res) => {
     if (product) {
       product.sku = sku || product.sku;
       product.name = name || product.name;
-      product.brand = brand !== undefined ? brand : product.brand; // <-- Thêm dòng cập nhật brand này
+      product.brand = brand !== undefined ? brand : product.brand;
       product.unit = unit || product.unit;
       product.import_price = import_price !== undefined ? import_price : product.import_price;
       product.export_price = export_price !== undefined ? export_price : product.export_price;
@@ -73,21 +67,28 @@ const updateProduct = async (req, res) => {
   }
 };
 
-// @desc    Lấy danh sách sản phẩm (Hỗ trợ Server-side Pagination)
+// @desc    Lấy danh sách sản phẩm (Phân trang Server)
 const getProducts = async (req, res) => {
   try {
-    // 1. Kiểm tra xem Frontend có yêu cầu phân trang không
     const isPaginated = req.query.page !== undefined;
 
-    // 2. NẾU KHÔNG YÊU CẦU PHÂN TRANG (Tương thích ngược cho trang Xuất/Nhập kho)
+    // NẾU GỌI TỪ TRANG KHÁC (KHÔNG PHÂN TRANG)
     if (!isPaginated) {
       const products = await Product.find({}).sort({ createdAt: -1 });
       return res.json(products);
     }
 
-    // 3. NẾU CÓ YÊU CẦU PHÂN TRANG (Dành cho ProductPage)
+    // NẾU GỌI TỪ TRANG SẢN PHẨM (CÓ PHÂN TRANG)
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
+    
+    // Fix lỗi xuất Excel (limit = all)
+    let limit = 10;
+    if (req.query.limit === 'all') {
+        limit = 0; // 0 trong Mongoose có nghĩa là lấy tất cả
+    } else if (req.query.limit) {
+        limit = parseInt(req.query.limit) || 10;
+    }
+
     const search = req.query.search || '';
     const status = req.query.status || 'all';
     const sortKey = req.query.sortKey || 'createdAt';
@@ -95,7 +96,6 @@ const getProducts = async (req, res) => {
 
     let query = {};
 
-    // Xử lý tìm kiếm (Chuyển logic tìm kiếm từ Frontend xuống Backend)
     if (search) {
       const searchKeywords = search.toLowerCase().split(/\s+/).filter(word => word.length > 0);
       if (searchKeywords.length > 0) {
@@ -109,25 +109,20 @@ const getProducts = async (req, res) => {
       }
     }
 
-    // Xử lý bộ lọc tồn kho
     if (status === 'in_stock') query.current_stock = { $gt: 0 };
     if (status === 'out_of_stock') query.current_stock = { $lte: 0 };
 
-    // Xử lý sắp xếp
     let sortObj = {};
     if (sortKey) sortObj[sortKey] = sortDir;
 
-    // Đếm tổng số lượng để Frontend vẽ số trang
     const totalItems = await Product.countDocuments(query);
-    const totalPages = Math.ceil(totalItems / limit);
+    const totalPages = limit > 0 ? Math.ceil(totalItems / limit) : 1;
 
-    // Truy vấn dữ liệu thực tế (skip và limit)
     const products = await Product.find(query)
       .sort(sortObj)
-      .skip((page - 1) * limit)
-      .limit(limit);
+      .skip(limit > 0 ? (page - 1) * limit : 0)
+      .limit(limit > 0 ? limit : 0);
 
-    // Trả về Object chứa cả dữ liệu và thông tin phân trang
     res.json({
       data: products,
       pagination: {
@@ -143,7 +138,7 @@ const getProducts = async (req, res) => {
   }
 };
 
-// @route   DELETE /api/products/:id
+// @desc    Xóa sản phẩm
 const deleteProduct = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
