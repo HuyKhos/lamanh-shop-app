@@ -1,35 +1,35 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom'; 
 import { 
   Users, Plus, Search, X, MapPin, Phone, User, 
   Trash2, Save, Menu, Pencil, Filter, ArrowUpDown, ArrowUp, ArrowDown,
   Crown, EyeOff, ChevronLeft, ChevronRight,
-  PlusCircle, Percent // <-- Thêm icon mới
+  PlusCircle, Percent
 } from 'lucide-react';
 import axiosClient from '../api/axiosClient';
 import { toast } from 'react-toastify';
 
 const PartnerPage = () => {
   const { isExpanded, setIsExpanded } = useOutletContext();
-  const { globalCache, refreshFlags, updateCache, triggerRefresh } = useOutletContext();
+  const { globalCache, refreshFlags, triggerRefresh } = useOutletContext();
 
   const [showModal, setShowModal] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
-  
-  // --- STATE ANIMATION ĐÓNG ---
   const [isClosing, setIsClosing] = useState(false);
 
+  // --- STATE DỮ LIỆU ---
+  const [partners, setPartners] = useState([]); 
+  const [loading, setLoading] = useState(true);
+
+  // --- STATE TÌM KIẾM & PHÂN TRANG ---
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all'); 
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'default' });
-
+  const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' });
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10); 
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
-  const [partners, setPartners] = useState(globalCache.partners || []); 
-  const [loading, setLoading] = useState(!globalCache.partners);
-
-  // Thêm mảng brand_discounts vào state mặc định
   const [formData, setFormData] = useState({
     _id: null, name: '', phone: '', address: '', type: 'customer', is_wholesale: false, hide_price: false, brand_discounts: []
   });
@@ -39,7 +39,6 @@ const PartnerPage = () => {
     setIsEditMode(false);
   };
 
-  // --- HÀM ĐÓNG MODAL CÓ HIỆU ỨNG ---
   const handleClose = () => {
     setIsClosing(true);
     setTimeout(() => {
@@ -48,81 +47,87 @@ const PartnerPage = () => {
     }, 100); 
   };
 
-  useEffect(() => {
-    const loadData = async () => {
-      if (!globalCache.partners || refreshFlags.partners) {
-        try {
-          setLoading(true);
-          const res = await axiosClient.get('/partners');
-          setPartners(res);
-          updateCache('partners', res);
-        } catch (error) { console.error(error); } finally { setLoading(false); }
-      }
-    };
-    loadData();
-  }, [refreshFlags.partners]);
-
-  useEffect(() => { if (!showModal) resetForm(); }, [showModal]);
-  useEffect(() => { setCurrentPage(1); }, [searchTerm, filterType]);
-
-  const fetchPartners = async () => {
+  // --- HÀM GỌI API (SERVER-SIDE) ---
+  const fetchPartners = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await axiosClient.get('/partners');
-      setPartners(data);
-      updateCache('partners', data);
-    } catch (error) { toast.error('Lỗi tải danh sách đối tác'); } finally { setLoading(false); }
-  };
-
-  const getProcessedPartners = () => {
-    let result = [...partners];
-    if (searchTerm) {
-      const lowerTerm = searchTerm.toLowerCase();
-      result = result.filter(p => (p.name || '').toLowerCase().includes(lowerTerm) || (p.phone || '').includes(lowerTerm) || (p.address || '').includes(lowerTerm));
-    }
-    if (filterType !== 'all') result = result.filter(p => p.type === filterType);
-    if (sortConfig.key) {
-      result.sort((a, b) => {
-        let aValue = a[sortConfig.key]; let bValue = b[sortConfig.key];
-        if (aValue === undefined || aValue === null) aValue = ''; if (bValue === undefined || bValue === null) bValue = '';
-        if (typeof aValue === 'string') return sortConfig.direction === 'asc' ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue);
-        return sortConfig.direction === 'asc' ? aValue - bValue : bValue - aValue;
+      const params = new URLSearchParams({
+        page: currentPage,
+        limit: itemsPerPage,
+        search: searchTerm,
+        type: filterType,
+        sortKey: sortConfig.key || 'createdAt',
+        sortDir: sortConfig.direction === 'asc' ? 'asc' : 'desc'
       });
+
+      const res = await axiosClient.get(`/partners?${params.toString()}`);
+      
+      if (res && res.pagination) {
+          setPartners(res.data);
+          setTotalItems(res.pagination.totalItems);
+          setTotalPages(res.pagination.totalPages);
+      } else if (Array.isArray(res)) {
+          setPartners(res);
+          setTotalItems(res.length);
+          setTotalPages(1);
+      } else {
+          setPartners([]);
+      }
+    } catch (error) { 
+      toast.error('Lỗi tải danh sách đối tác'); 
+      console.error(error); 
+    } finally { 
+      setLoading(false); 
     }
-    return result;
+  }, [currentPage, itemsPerPage, searchTerm, filterType, sortConfig]);
+
+  // Gọi fetchPartners mỗi khi chuyển trang, đổi sort, filter hoặc có tín hiệu refresh
+  useEffect(() => {
+    fetchPartners();
+  }, [currentPage, itemsPerPage, filterType, sortConfig, refreshFlags.partners]);
+
+  // DEBOUNCE Tìm kiếm
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      setCurrentPage(1);
+      fetchPartners();
+    }, 500);
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchTerm]);
+
+  useEffect(() => { if (!showModal) resetForm(); }, [showModal]);
+
+  const handleSort = (key) => { 
+    let direction = 'asc'; 
+    if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc'; 
+    setSortConfig({ key, direction }); 
+    setCurrentPage(1);
   };
 
-  const handleSort = (key) => { let direction = 'asc'; if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc'; setSortConfig({ key, direction }); };
-  const renderSortIcon = (key) => { if (sortConfig.key !== key) return <ArrowUpDown size={14} className="text-gray-400 ml-1" />; return sortConfig.direction === 'asc' ? <ArrowUp size={14} className="text-blue-600 ml-1" /> : <ArrowDown size={14} className="text-blue-600 ml-1" />; };
-
-  const processedPartners = getProcessedPartners();
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentPartners = processedPartners.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(processedPartners.length / itemsPerPage);
+  const renderSortIcon = (key) => { 
+    if (sortConfig.key !== key) return <ArrowUpDown size={14} className="text-gray-400 ml-1" />; 
+    return sortConfig.direction === 'asc' ? <ArrowUp size={14} className="text-blue-600 ml-1" /> : <ArrowDown size={14} className="text-blue-600 ml-1" />; 
+  };
 
   const paginate = (pageNumber) => { if (pageNumber > 0 && pageNumber <= totalPages) setCurrentPage(pageNumber); };
 
   const handleSavePartner = async (e) => {
     e.preventDefault();
 
-    // --- KIỂM TRA TRÙNG LẶP NHÃN HÀNG (MỚI THÊM) ---
+    // KIỂM TRA TRÙNG LẶP NHÃN HÀNG
     if (formData.type === 'customer' && formData.brand_discounts && formData.brand_discounts.length > 1) {
-      // Chuyển tất cả tên nhãn hàng về in thường và bỏ dấu cách thừa để so sánh cho chuẩn
       const brands = formData.brand_discounts.map(d => d.brand.trim().toLowerCase());
-      const uniqueBrands = new Set(brands); // Set tự động loại bỏ các phần tử trùng
-      
+      const uniqueBrands = new Set(brands); 
       if (brands.length !== uniqueBrands.size) {
         return toast.error('Lỗi: Bạn đang cấu hình trùng lặp nhãn hàng! Vui lòng kiểm tra lại.');
       }
     }
-    // -----------------------------------------------
 
     try {
       if (isEditMode && formData._id) {
         await axiosClient.put(`/partners/${formData._id}`, formData);
         toast.success('Cập nhật thành công! ✏️');
-        triggerRefresh(['exports', 'imports', 'dashboard', 'partners']);
+        triggerRefresh(['exports', 'imports', 'dashboard', 'partners']); 
       } else {
         await axiosClient.post('/partners', formData);
         toast.success('Thêm đối tác thành công! 🎉');
@@ -130,21 +135,28 @@ const PartnerPage = () => {
       }
       
       handleClose();
-      fetchPartners();
-    } catch (error) { 
-      toast.error('Lỗi: ' + (error.response?.data?.message || error.message)); 
-    }
+      fetchPartners(); // Gọi lại hàm fetch của trang hiện tại
+    } catch (error) { toast.error('Lỗi: ' + (error.response?.data?.message || error.message)); }
   };
 
   const handleDeletePartner = async (e, id, name) => {
     e.stopPropagation();
     if (window.confirm(`Bạn có chắc muốn xóa đối tác "${name}" không?`)) {
-      try { await axiosClient.delete(`/partners/${id}`); toast.success('Đã xóa đối tác'); fetchPartners(); } catch (error) { toast.error('Không thể xóa: ' + error.message); }
+      try { 
+        await axiosClient.delete(`/partners/${id}`); 
+        toast.success('Đã xóa đối tác'); 
+        
+        // Nếu xóa item cuối cùng của trang, lùi lại 1 trang
+        if (partners.length === 1 && currentPage > 1) {
+            setCurrentPage(currentPage - 1);
+        } else {
+            fetchPartners(); 
+        }
+      } catch (error) { toast.error('Không thể xóa: ' + error.message); }
     }
   };
 
   const handleRowClick = (partner) => {
-    // Đảm bảo brand_discounts luôn là mảng khi load dữ liệu cũ lên
     setFormData({ 
         ...partner, 
         is_wholesale: partner.is_wholesale || false, 
@@ -154,7 +166,6 @@ const PartnerPage = () => {
     setIsEditMode(true); setShowModal(true);
   };
 
-  // --- CÁC HÀM XỬ LÝ CHIẾT KHẤU NHÃN HÀNG ---
   const handleAddBrandDiscount = () => {
     setFormData(prev => ({
         ...prev,
@@ -173,7 +184,6 @@ const PartnerPage = () => {
     newDiscounts.splice(index, 1);
     setFormData({ ...formData, brand_discounts: newDiscounts });
   };
-  // ------------------------------------------
 
   const renderTypeBadge = (type) => {
     if (type === 'customer') return <span className="bg-orange-100 text-orange-700 px-2 py-1 rounded text-xs font-bold border border-orange-200">Khách hàng</span>;
@@ -183,16 +193,7 @@ const PartnerPage = () => {
 
   return (
     <div className="p-2 pb-10">
-      <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; transform: scale(0.95); }
-          to { opacity: 1; transform: scale(1); }
-        }
-        @keyframes fadeOut {
-          from { opacity: 1; transform: scale(1); }
-          to { opacity: 0; transform: scale(0.95); }
-        }
-      `}</style>
+      <style>{`@keyframes fadeIn {from { opacity: 0; transform: scale(0.95); }to { opacity: 1; transform: scale(1); }}@keyframes fadeOut {from { opacity: 1; transform: scale(1); }to { opacity: 0; transform: scale(0.95); }}`}</style>
 
       {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
@@ -208,7 +209,7 @@ const PartnerPage = () => {
           </div>
           <div className="relative">
             <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 pointer-events-none"><Filter size={16} /></div>
-            <select className="pl-9 pr-8 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm appearance-none bg-white cursor-pointer hover:bg-gray-50" value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+            <select className="pl-9 pr-8 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm appearance-none bg-white cursor-pointer hover:bg-gray-50" value={filterType} onChange={(e) => { setFilterType(e.target.value); setCurrentPage(1); }}>
               <option value="all">Tất cả đối tác</option><option value="customer">Khách hàng</option><option value="supplier">Nhà cung cấp</option>
             </select>
           </div>
@@ -216,8 +217,14 @@ const PartnerPage = () => {
         </div>
       </div>
 
-      {/* TABLE */}
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+      {/* TABLE BỌC LOADING OVERLAY */}
+      <div className="bg-white rounded-xl shadow-sm border overflow-hidden relative min-h-[400px]">
+        {loading && (
+             <div className="absolute inset-0 bg-white bg-opacity-60 z-10 flex items-center justify-center">
+                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+             </div>
+        )}
+
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead className="bg-blue-50 text-gray-600 font-semibold text-sm border-b">
@@ -231,8 +238,8 @@ const PartnerPage = () => {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {currentPartners.length === 0 ? ( <tr><td colSpan="6" className="p-8 text-center text-gray-500">{loading ? 'Đang tải...' : 'Không tìm thấy đối tác nào.'}</td></tr> ) : (
-                currentPartners.map((p) => (
+              {!loading && partners.length === 0 ? ( <tr><td colSpan="6" className="p-8 text-center text-gray-500">Không tìm thấy đối tác nào.</td></tr> ) : (
+                partners.map((p) => (
                   <tr key={p._id} className="hover:bg-gray-100 transition-colors cursor-pointer group" onClick={() => handleRowClick(p)}>
                     <td className="p-4 font-medium text-gray-800">{p.name}<div className="flex gap-1 mt-1">{p.is_wholesale && <span title="Khách sỉ (VIP)" className="bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded text-[10px] border border-yellow-200 flex items-center gap-1 w-fit"><Crown size={10} /> VIP</span>}{p.hide_price && <span title="Ẩn giá khi in" className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded text-[10px] border border-gray-200 flex items-center gap-1 w-fit"><EyeOff size={10} /> Ẩn giá</span>}</div></td>
                     <td className="p-4 text-center">{renderTypeBadge(p.type)}</td>
@@ -247,17 +254,17 @@ const PartnerPage = () => {
           </table>
         </div>
 
-        {/* THANH PHÂN TRANG UI */}
-        {processedPartners.length > 0 && (
+        {/* THANH PHÂN TRANG UI (CẬP NHẬT SERVER STATE) */}
+        {totalItems > 0 && (
             <div className="flex items-center justify-between px-4 py-3 border-t">
-              <div className="text-sm text-gray-500">Hiển thị {indexOfFirstItem + 1}-{Math.min(indexOfLastItem, processedPartners.length)} trong số {processedPartners.length} đối tác</div>
+              <div className="text-sm text-gray-500">Hiển thị {((currentPage - 1) * itemsPerPage) + 1}-{Math.min(currentPage * itemsPerPage, totalItems)} trong số {totalItems} đối tác</div>
               <div className="flex items-center gap-2">
-                <select className="border border-gray-300 rounded-md text-sm px-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none" value={itemsPerPage} onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}>
+                <select className="border border-gray-300 rounded-md text-sm px-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none bg-white cursor-pointer" value={itemsPerPage} onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}>
                   <option value="10">10 dòng</option><option value="20">20 dòng</option><option value="50">50 dòng</option><option value="100">100 dòng</option>
                 </select>
-                <button onClick={() => paginate(currentPage - 1)} disabled={currentPage === 1} className={`p-1 rounded-md border ${currentPage === 1 ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50'}`}><ChevronLeft size={20} /></button>
-                <div className="flex gap-1">{Array.from({ length: Math.min(5, totalPages) }, (_, i) => { let pageNum = i + 1; if (totalPages > 5) { if (currentPage > 3) pageNum = currentPage - 2 + i; if (pageNum > totalPages) pageNum = totalPages - 4 + i; } return (<button key={pageNum} onClick={() => paginate(pageNum)} className={`w-8 h-8 flex items-center justify-center rounded-md text-sm font-medium transition-colors ${ currentPage === pageNum ? 'bg-blue-600 text-white shadow-sm' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100' }`}>{pageNum}</button>) })}</div>
-                <button onClick={() => paginate(currentPage + 1)} disabled={currentPage === totalPages} className={`p-1 rounded-md border ${currentPage === totalPages ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50'}`}><ChevronRight size={20} /></button>
+                <button onClick={() => paginate(currentPage - 1)} disabled={currentPage === 1} className={`p-1 rounded-md border ${currentPage === 1 ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50 cursor-pointer'}`}><ChevronLeft size={20} /></button>
+                <div className="flex gap-1">{Array.from({ length: Math.min(5, totalPages) }, (_, i) => { let pageNum = i + 1; if (totalPages > 5) { if (currentPage > 3) pageNum = currentPage - 2 + i; if (pageNum > totalPages) pageNum = totalPages - 4 + i; } return (<button key={pageNum} onClick={() => paginate(pageNum)} className={`w-8 h-8 flex items-center justify-center rounded-md text-sm font-medium transition-colors ${ currentPage === pageNum ? 'bg-blue-600 text-white shadow-sm cursor-default' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 cursor-pointer' }`}>{pageNum}</button>) })}</div>
+                <button onClick={() => paginate(currentPage + 1)} disabled={currentPage === totalPages} className={`p-1 rounded-md border ${currentPage === totalPages ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50 cursor-pointer'}`}><ChevronRight size={20} /></button>
               </div>
             </div>
         )}
@@ -300,11 +307,10 @@ const PartnerPage = () => {
                     <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 space-y-3">
                       <h3 className="text-sm font-bold text-blue-800 uppercase tracking-wider">Cấu hình khách hàng</h3>
                       
-                      {/* Toggles hiện có */}
                       <div className="flex items-center justify-between"><div className="flex items-center gap-2"><Crown size={18} className="text-yellow-600" /><span className="text-sm font-medium text-gray-700">Khách sỉ (Hưởng chiết khấu)</span></div><label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={formData.is_wholesale} onChange={(e) => setFormData({...formData, is_wholesale: e.target.checked})} /><div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div></label></div>
                       <div className="flex items-center justify-between border-t border-blue-200 pt-3"><div className="flex items-center gap-2"><EyeOff size={18} className="text-gray-500" /><span className="text-sm font-medium text-gray-700">Luôn ẩn giá khi in phiếu</span></div><label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={formData.hide_price} onChange={(e) => setFormData({...formData, hide_price: e.target.checked})} /><div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div></label></div>
 
-                      {/* --- KHU VỰC THÊM CHIẾT KHẤU NHÃN HÀNG --- */}
+                      {/* CHIẾT KHẤU THEO NHÃN HÀNG */}
                       <div className="border-t border-blue-200 pt-3 mt-3">
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
@@ -324,7 +330,7 @@ const PartnerPage = () => {
                                   <input 
                                     type="text" 
                                     list="partner-brand-suggestions"
-                                    placeholder="Chọn hoặc nhập nhãn hàng..." 
+                                    placeholder="Tên Nhãn (VD: Mămmy)" 
                                     className="w-full border border-gray-300 rounded p-1.5 text-sm outline-none focus:ring-1 focus:ring-blue-500 bg-white" 
                                     value={discount.brand} 
                                     onChange={(e) => handleUpdateBrandDiscount(index, 'brand', e.target.value)} 
@@ -333,18 +339,18 @@ const PartnerPage = () => {
                                   />
                                 </div>
                                 <div className="w-20 relative">
-                                <input 
-                                  type="number" 
-                                  placeholder="%" 
-                                  className="w-full border border-gray-300 rounded p-1.5 pr-6 text-sm outline-none focus:ring-1 focus:ring-blue-500 text-right" 
-                                  value={discount.discount_percent} 
-                                  onChange={(e) => handleUpdateBrandDiscount(index, 'discount_percent', Number(e.target.value))} 
-                                  onFocus={(e) => e.target.select()}
-                                  onWheel={(e) => e.target.blur()}
-                                  required 
-                                  min="0" 
-                                  max="100" 
-                                />
+                                  <input 
+                                    type="number" 
+                                    placeholder="%" 
+                                    className="w-full border border-gray-300 rounded p-1.5 pr-6 text-sm outline-none focus:ring-1 focus:ring-blue-500 text-right" 
+                                    value={discount.discount_percent} 
+                                    onChange={(e) => handleUpdateBrandDiscount(index, 'discount_percent', Number(e.target.value))} 
+                                    onFocus={(e) => e.target.select()}
+                                    onWheel={(e) => e.target.blur()}
+                                    required 
+                                    min="0" 
+                                    max="100" 
+                                  />
                                   <span className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 text-xs">%</span>
                                 </div>
                                 <button type="button" onClick={() => handleRemoveBrandDiscount(index)} className="text-red-400 hover:text-red-600 p-1 hover:bg-red-50 rounded transition-colors" title="Xóa dòng này">
@@ -358,6 +364,7 @@ const PartnerPage = () => {
                             </p>
                           )}
                         </div>
+
                         <datalist id="partner-brand-suggestions">
                           {Array.from(new Set([
                             ...(globalCache.products?.map(p => p.brand) || []),
@@ -367,8 +374,6 @@ const PartnerPage = () => {
                           ))}
                         </datalist>
                       </div>
-                      {/* ------------------------------------------ */}
-
                     </div>
                   )}
                 </div>
