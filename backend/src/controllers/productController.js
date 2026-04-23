@@ -73,11 +73,71 @@ const updateProduct = async (req, res) => {
   }
 };
 
-// @desc    Lấy danh sách sản phẩm
+// @desc    Lấy danh sách sản phẩm (Hỗ trợ Server-side Pagination)
 const getProducts = async (req, res) => {
   try {
-    const products = await Product.find({}).sort({ createdAt: -1 });
-    res.json(products);
+    // 1. Kiểm tra xem Frontend có yêu cầu phân trang không
+    const isPaginated = req.query.page !== undefined;
+
+    // 2. NẾU KHÔNG YÊU CẦU PHÂN TRANG (Tương thích ngược cho trang Xuất/Nhập kho)
+    if (!isPaginated) {
+      const products = await Product.find({}).sort({ createdAt: -1 });
+      return res.json(products);
+    }
+
+    // 3. NẾU CÓ YÊU CẦU PHÂN TRANG (Dành cho ProductPage)
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const search = req.query.search || '';
+    const status = req.query.status || 'all';
+    const sortKey = req.query.sortKey || 'createdAt';
+    const sortDir = req.query.sortDir === 'asc' ? 1 : -1;
+
+    let query = {};
+
+    // Xử lý tìm kiếm (Chuyển logic tìm kiếm từ Frontend xuống Backend)
+    if (search) {
+      const searchKeywords = search.toLowerCase().split(/\s+/).filter(word => word.length > 0);
+      if (searchKeywords.length > 0) {
+        query.$and = searchKeywords.map(keyword => ({
+          $or: [
+            { name: { $regex: keyword, $options: 'i' } },
+            { sku: { $regex: keyword, $options: 'i' } },
+            { brand: { $regex: keyword, $options: 'i' } }
+          ]
+        }));
+      }
+    }
+
+    // Xử lý bộ lọc tồn kho
+    if (status === 'in_stock') query.current_stock = { $gt: 0 };
+    if (status === 'out_of_stock') query.current_stock = { $lte: 0 };
+
+    // Xử lý sắp xếp
+    let sortObj = {};
+    if (sortKey) sortObj[sortKey] = sortDir;
+
+    // Đếm tổng số lượng để Frontend vẽ số trang
+    const totalItems = await Product.countDocuments(query);
+    const totalPages = Math.ceil(totalItems / limit);
+
+    // Truy vấn dữ liệu thực tế (skip và limit)
+    const products = await Product.find(query)
+      .sort(sortObj)
+      .skip((page - 1) * limit)
+      .limit(limit);
+
+    // Trả về Object chứa cả dữ liệu và thông tin phân trang
+    res.json({
+      data: products,
+      pagination: {
+        currentPage: page,
+        totalPages: totalPages || 1,
+        totalItems: totalItems,
+        itemsPerPage: limit
+      }
+    });
+
   } catch (error) {
     res.status(500).json({ message: 'Lỗi Server: ' + error.message });
   }

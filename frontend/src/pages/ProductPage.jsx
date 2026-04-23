@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom'; 
 import { 
   Plus, Search, X, Barcode, Tag, Gift, FileText, Trash2, Menu, Pencil, 
@@ -12,27 +12,27 @@ import * as XLSX from 'xlsx';
 import html2canvas from 'html2canvas'; 
 
 const ProductPage = () => {
-  const { globalCache, refreshFlags, updateCache } = useOutletContext();
+  const { refreshFlags, updateCache } = useOutletContext();
   const { isExpanded, setIsExpanded } = useOutletContext();
   const reportRef = useRef(null); 
   
-  const [products, setProducts] = useState(globalCache.products || []);
-  const [loading, setLoading] = useState(!globalCache.products);
+  // --- STATE DỮ LIỆU ---
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
-
-  // --- STATE ANIMATION ĐÓNG (MỚI) ---
   const [isClosing, setIsClosing] = useState(false);
 
-  // --- STATE TÌM KIẾM & LỌC ---
+  // --- STATE TÌM KIẾM, LỌC & SERVER-SIDE PAGINATION ---
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all'); 
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'default' });
-
-  // --- STATE PHÂN TRANG ---
+  const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' });
+  
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10); 
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
   const [formData, setFormData] = useState({
     _id: null, sku: '', name: '', brand: '', unit: '', import_price: '', export_price: '', discount_percent: '', gift_points: '', min_stock: 10
@@ -45,116 +45,75 @@ const ProductPage = () => {
     setIsEditMode(false);
   };
 
-  // --- HÀM ĐÓNG MODAL CÓ HIỆU ỨNG (MỚI) ---
   const handleCloseModal = () => {
     setIsClosing(true);
     setTimeout(() => {
       setShowModal(false);
       setIsClosing(false);
-    }, 100); // Chờ 0.1s cho animation fadeOut chạy xong
+    }, 100); 
   };
 
-  // --- USE EFFECTS ---
-  useEffect(() => {
-    const loadData = async () => {
-      if (!globalCache.products || refreshFlags.products) {
-        try {
-          setLoading(true);
-          const res = await axiosClient.get('/products');
-          setProducts(res);
-          updateCache('products', res);
-        } catch (error) {
-          console.error(error);
-        } finally {
-          setLoading(false);
-        }
+  // --- HÀM GỌI API (SERVER-SIDE) ---
+  const fetchProducts = useCallback(async () => {
+    try {
+      setLoading(true);
+      // Tạo query string gửi lên backend
+      const params = new URLSearchParams({
+        page: currentPage,
+        limit: itemsPerPage,
+        search: searchTerm,
+        status: filterStatus,
+        sortKey: sortConfig.key || 'createdAt',
+        sortDir: sortConfig.direction === 'asc' ? 'asc' : 'desc'
+      });
+
+      const res = await axiosClient.get(`/products?${params.toString()}`);
+      
+      // Nhận dữ liệu phân trang từ backend
+      if (res.pagination) {
+          setProducts(res.data);
+          setTotalItems(res.pagination.totalItems);
+          setTotalPages(res.pagination.totalPages);
       }
-    };
-    loadData();
-  }, [refreshFlags.products]);
+    } catch (error) {
+      toast.error('Lỗi tải danh sách sản phẩm');
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  }, [currentPage, itemsPerPage, searchTerm, filterStatus, sortConfig]);
+
+  // Kích hoạt gọi API khi có thay đổi (Ngoại trừ searchTerm sẽ dùng Debounce bên dưới)
+  useEffect(() => {
+    fetchProducts();
+  }, [currentPage, itemsPerPage, filterStatus, sortConfig, refreshFlags.products]);
+
+  // --- DEBOUNCE TÌM KIẾM ---
+  // Tự động tìm kiếm sau khi người dùng ngừng gõ 500ms
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      setCurrentPage(1); // Reset về trang 1 khi tìm kiếm
+      fetchProducts();
+    }, 500);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchTerm]);
 
   useEffect(() => {
     if (!showModal) resetForm();
   }, [showModal]);
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, filterStatus]);
-
-  const fetchProducts = async () => {
-    try {
-      setLoading(true);
-      const data = await axiosClient.get('/products');
-      setProducts(data);
-      updateCache('products', data);
-    } catch (error) {
-      toast.error('Lỗi tải danh sách');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // --- LOGIC XỬ LÝ DỮ LIỆU (ĐÃ CẬP NHẬT TÌM KIẾM THÔNG MINH) ---
-  const getProcessedProducts = () => {
-    let result = [...products];
-
-    // --- SỬA ĐỔI TẠI ĐÂY: Logic tìm kiếm đa từ khóa ---
-    if (searchTerm) {
-      // 1. Tách từ khóa người dùng nhập thành mảng các từ
-      const searchKeywords = searchTerm.toLowerCase().split(/\s+/).filter(word => word.length > 0);
-
-      result = result.filter(p => {
-        const productName = p.name.toLowerCase();
-        const productSku = (p.sku || '').toLowerCase();
-
-        // 2. Logic AND: Sản phẩm phải chứa TẤT CẢ các từ khóa trong Tên hoặc Mã
-        return searchKeywords.every(keyword => 
-            productName.includes(keyword) || productSku.includes(keyword)
-        );
-      });
-    }
-    // --------------------------------------------------
-
-    if (filterStatus !== 'all') {
-      result = result.filter(p => {
-        if (filterStatus === 'out_of_stock') return p.current_stock <= 0;
-        if (filterStatus === 'in_stock') return p.current_stock > 0;
-        return true;
-      });
-    }
-
-    if (sortConfig.key) {
-      result.sort((a, b) => {
-        let aValue = a[sortConfig.key];
-        let bValue = b[sortConfig.key];
-        if (aValue === undefined || aValue === null) aValue = '';
-        if (bValue === undefined || bValue === null) bValue = '';
-        if (typeof aValue === 'string') {
-          return sortConfig.direction === 'asc' ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue);
-        }
-        return sortConfig.direction === 'asc' ? aValue - bValue : bValue - aValue;
-      });
-    }
-    return result;
-  };
-
   const handleSort = (key) => {
     let direction = 'asc';
     if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
     setSortConfig({ key, direction });
+    setCurrentPage(1); // Reset về trang 1 khi sort
   };
 
   const renderSortIcon = (key) => {
     if (sortConfig.key !== key) return <ArrowUpDown size={14} className="text-gray-400 ml-1" />;
     return sortConfig.direction === 'asc' ? <ArrowUp size={14} className="text-blue-600 ml-1" /> : <ArrowDown size={14} className="text-blue-600 ml-1" />;
   };
-
-  // --- XỬ LÝ PHÂN TRANG ---
-  const filteredProducts = getProcessedProducts();
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentItems = filteredProducts.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
 
   const paginate = (pageNumber) => {
     if (pageNumber > 0 && pageNumber <= totalPages) {
@@ -168,21 +127,41 @@ const ProductPage = () => {
   };
 
   // --- CÁC HÀM XUẤT FILE ---
-  const handleExportExcel = () => {
-    const dataToExport = filteredProducts.map(p => ({
-      'Tên sản phẩm': p.name,
-      'Nhãn hàng': p.brand || '',
-      'Đơn vị': p.unit,
-      'Điểm': p.gift_points || 0,
-      'Tồn cuối': p.current_stock
-    }));
-    const ws = XLSX.utils.json_to_sheet(dataToExport);
-    const wscols = [{ wch: 40 }, { wch: 20 }, { wch: 10 }, { wch: 10 }, { wch: 10 }];
-    ws['!cols'] = wscols;
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "BaoCaoTonKho");
-    XLSX.writeFile(wb, `Bao_Cao_Ton_Kho_${new Date().toLocaleDateString('vi-VN').replace(/\//g, '-')}.xlsx`);
-    setShowExportMenu(false);
+  // Lưu ý: Xuất Excel bây giờ cần gọi API lấy TOÀN BỘ dữ liệu đã lọc (không có page)
+  const handleExportExcel = async () => {
+    try {
+      toast.info("Đang xử lý dữ liệu xuất Excel...");
+      const params = new URLSearchParams({
+        limit: 'all', // Yêu cầu backend trả về tất cả kết quả match với filter hiện tại
+        search: searchTerm,
+        status: filterStatus,
+        sortKey: sortConfig.key || 'createdAt',
+        sortDir: sortConfig.direction === 'asc' ? 'asc' : 'desc'
+      });
+      
+      const allData = await axiosClient.get(`/products?${params.toString()}`);
+      // Trường hợp backend trả về object (do code mới) hoặc array (do code cũ)
+      const exportList = allData.data ? allData.data : allData;
+
+      const dataToExport = exportList.map(p => ({
+        'Tên sản phẩm': p.name,
+        'Nhãn hàng': p.brand || '',
+        'Đơn vị': p.unit,
+        'Điểm': p.gift_points || 0,
+        'Tồn cuối': p.current_stock
+      }));
+      
+      const ws = XLSX.utils.json_to_sheet(dataToExport);
+      const wscols = [{ wch: 40 }, { wch: 20 }, { wch: 10 }, { wch: 10 }, { wch: 10 }];
+      ws['!cols'] = wscols;
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "BaoCaoTonKho");
+      XLSX.writeFile(wb, `Bao_Cao_Ton_Kho_${new Date().toLocaleDateString('vi-VN').replace(/\//g, '-')}.xlsx`);
+    } catch(err) {
+      toast.error("Lỗi xuất Excel");
+    } finally {
+      setShowExportMenu(false);
+    }
   };
 
   const handleExportImage = async () => {
@@ -226,10 +205,8 @@ const ProductPage = () => {
         toast.success('Thêm sản phẩm thành công! 🎉');
       }
       
-      // ĐÓNG MODAL VỚI HIỆU ỨNG
       handleCloseModal();
-      
-      fetchProducts();
+      fetchProducts(); // Refresh danh sách hiện tại
     } catch (error) {
       const message = error.response?.data?.message || error.message;
       toast.error(`Lỗi: ${message}`);
@@ -242,7 +219,13 @@ const ProductPage = () => {
       try {
         await axiosClient.delete(`/products/${id}`);
         toast.success('Đã xóa sản phẩm');
-        fetchProducts();
+        
+        // Nếu xóa phần tử cuối cùng của trang, lùi lại 1 trang
+        if (products.length === 1 && currentPage > 1) {
+            setCurrentPage(currentPage - 1);
+        } else {
+            fetchProducts();
+        }
       } catch (error) {
         const msg = error.response?.data?.message || error.message;
         toast.error('Lỗi: ' + msg);
@@ -308,14 +291,14 @@ const ProductPage = () => {
             {/* Search */}
             <div className="relative flex-1 md:w-64">
               <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-              <input type="text" className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm" placeholder="Tìm tên hoặc mã SP..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+              <input type="text" className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm" placeholder="Tìm tên, mã SP hoặc Nhãn hàng..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
               {searchTerm && (<button onClick={() => setSearchTerm('')} className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={14} /></button>)}
             </div>
 
             {/* Filter */}
             <div className="relative">
               <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 pointer-events-none"><Filter size={16} /></div>
-              <select className="pl-9 pr-8 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm appearance-none bg-white cursor-pointer hover:bg-gray-50" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+              <select className="pl-9 pr-8 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm appearance-none bg-white cursor-pointer hover:bg-gray-50" value={filterStatus} onChange={(e) => {setFilterStatus(e.target.value); setCurrentPage(1);}}>
                 <option value="all">Tất cả kho</option>
                 <option value="in_stock">✅ Còn hàng</option>
                 <option value="out_of_stock">⛔ Hết hàng</option>
@@ -344,7 +327,14 @@ const ProductPage = () => {
         </div>
 
         {/* TABLE WEB */}
-        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+        <div className="bg-white rounded-xl shadow-sm border overflow-hidden relative min-h-[400px]">
+          {/* Lớp overlay mờ khi đang loading chuyển trang */}
+          {loading && (
+             <div className="absolute inset-0 bg-white bg-opacity-60 z-10 flex items-center justify-center">
+                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+             </div>
+          )}
+
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead className="bg-blue-50 text-gray-600 font-semibold text-sm border-b">
@@ -362,10 +352,10 @@ const ProductPage = () => {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {currentItems.length === 0 ? (
-                  <tr><td colSpan="10" className="p-8 text-center text-gray-500">{loading ? 'Đang tải...' : 'Không tìm thấy sản phẩm.'}</td></tr>
+                {!loading && products.length === 0 ? (
+                  <tr><td colSpan="10" className="p-8 text-center text-gray-500">Không tìm thấy sản phẩm.</td></tr>
                 ) : (
-                  currentItems.map((p) => {
+                  products.map((p) => {
                     const minStock = p.min_stock || 10;
                     const badgeClass = getStockBadgeColor(p.current_stock, minStock);
                     return (
@@ -396,21 +386,20 @@ const ProductPage = () => {
             </table>
           </div>
 
-          {/* --- THANH PHÂN TRANG UI --- */}
-          {filteredProducts.length > 0 && (
+          {/* --- THANH PHÂN TRANG UI (CẬP NHẬT THEO SERVER STATE) --- */}
+          {totalItems > 0 && (
             <div className="flex items-center justify-between px-4 py-3 border-t">
               <div className="text-sm text-gray-500">
-                Hiển thị {indexOfFirstItem + 1}-{Math.min(indexOfLastItem, filteredProducts.length)} trong số {filteredProducts.length} sản phẩm
+                Hiển thị {((currentPage - 1) * itemsPerPage) + 1}-{Math.min(currentPage * itemsPerPage, totalItems)} trong số {totalItems} sản phẩm
               </div>
               
               <div className="flex items-center gap-2">
-                {/* Nút chọn số lượng mỗi trang */}
                 <select 
-                  className="border border-gray-300 rounded-md text-sm px-2 py-1 focus:ring-1 focus:ring-blue-500 outline-none"
+                  className="border border-gray-300 rounded-md text-sm px-2 py-1 focus:ring-1 focus:ring-blue-500 outline-none cursor-pointer bg-white"
                   value={itemsPerPage}
                   onChange={(e) => {
                     setItemsPerPage(Number(e.target.value));
-                    setCurrentPage(1);
+                    setCurrentPage(1); // Quay về trang 1 khi đổi số lượng hiển thị
                   }}
                 >
                   <option value="10">10 dòng</option>
@@ -419,19 +408,16 @@ const ProductPage = () => {
                   <option value="100">100 dòng</option>
                 </select>
 
-                {/* Các nút chuyển trang */}
                 <button 
                   onClick={() => paginate(currentPage - 1)} 
                   disabled={currentPage === 1}
-                  className={`p-1 rounded-md border ${currentPage === 1 ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50'}`}
+                  className={`p-1 rounded-md border ${currentPage === 1 ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50 cursor-pointer'}`}
                 >
                   <ChevronLeft size={20} />
                 </button>
                 
-                {/* Hiển thị số trang */}
                 <div className="flex gap-1">
                   {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                    // Logic hiển thị trang thông minh
                     let pageNum = i + 1;
                     if (totalPages > 5) {
                         if (currentPage > 3) pageNum = currentPage - 2 + i;
@@ -444,8 +430,8 @@ const ProductPage = () => {
                         onClick={() => paginate(pageNum)}
                         className={`w-8 h-8 flex items-center justify-center rounded-md text-sm font-medium transition-colors ${
                           currentPage === pageNum 
-                            ? 'bg-blue-600 text-white shadow-sm' 
-                            : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                            ? 'bg-blue-600 text-white shadow-sm cursor-default' 
+                            : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 cursor-pointer'
                         }`}
                       >
                         {pageNum}
@@ -457,7 +443,7 @@ const ProductPage = () => {
                 <button 
                   onClick={() => paginate(currentPage + 1)} 
                   disabled={currentPage === totalPages}
-                  className={`p-1 rounded-md border ${currentPage === totalPages ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50'}`}
+                  className={`p-1 rounded-md border ${currentPage === totalPages ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50 cursor-pointer'}`}
                 >
                   <ChevronRight size={20} />
                 </button>
@@ -489,7 +475,7 @@ const ProductPage = () => {
             </tr>
           </thead>
           <tbody>
-            {filteredProducts.map((p) => {
+            {products.map((p) => {
               return (
                 <tr key={p._id}>
                   <td className="border border-black p-2 text-left text-black">{p.name}</td>
@@ -504,7 +490,7 @@ const ProductPage = () => {
         </table>
       </div>
 
-      {/* MODAL FORM - ĐÃ THÊM ANIMATION */}
+      {/* MODAL FORM */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 backdrop-blur-sm">
            <div 
@@ -547,28 +533,19 @@ const ProductPage = () => {
                   </div>
               </div>
               
-              {/* --- ĐÃ SỬA THÀNH GRID 3 CỘT ĐỂ THÊM NHÃN HÀNG --- */}
               <div className="grid grid-cols-3 gap-6 mb-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
-                  <Tag size={16} className="text-gray-500" /> Nhãn hàng
-                </label>
-                <input 
-                  type="text" 
-                  list="brand-suggestions" 
-                  className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 outline-none bg-white" 
-                  placeholder="Chọn hoặc nhập mới..." 
-                  value={formData.brand} 
-                  onChange={(e) => setFormData({...formData, brand: e.target.value})} 
-                  autoComplete="off"
-                />
-                {/* DANH SÁCH DROPDOWN TỰ ĐỘNG LẤY TỪ CÁC SẢN PHẨM HIỆN CÓ */}
-                <datalist id="brand-suggestions">
-                  {Array.from(new Set(products.map(p => p.brand).filter(Boolean))).map((brandName, index) => (
-                    <option key={index} value={brandName} />
-                  ))}
-                </datalist>
-              </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1"><Tag size={16} className="text-gray-500" /> Nhãn hàng</label>
+                    <input 
+                      type="text" 
+                      list="brand-suggestions" 
+                      className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 outline-none bg-white" 
+                      placeholder="Chọn hoặc nhập mới..." 
+                      value={formData.brand} 
+                      onChange={(e) => setFormData({...formData, brand: e.target.value})} 
+                      autoComplete="off"
+                    />
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Đơn vị tính</label>
                     <input type="text" className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 outline-none" value={formData.unit} onChange={(e) => setFormData({...formData, unit: e.target.value})} />
@@ -578,7 +555,6 @@ const ProductPage = () => {
                     <input type="number" className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 outline-none" placeholder="VD: 5" value={formData.min_stock} onChange={(e) => setFormData({...formData, min_stock: e.target.value})} />
                   </div>
               </div>
-              {/* ----------------------------------------------- */}
 
               <div className="flex gap-3 border-t pt-4">
                 <button type="button" onClick={handleCloseModal} className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 font-medium transition-colors">Hủy bỏ</button>
