@@ -3,7 +3,8 @@ import { useOutletContext } from 'react-router-dom';
 import { 
   Users, Plus, Search, X, MapPin, Phone, User, 
   Trash2, Save, Menu, Pencil, Filter, ArrowUpDown, ArrowUp, ArrowDown,
-  Crown, EyeOff, ChevronLeft, ChevronRight 
+  Crown, EyeOff, ChevronLeft, ChevronRight,
+  PlusCircle, Percent // <-- Thêm icon mới
 } from 'lucide-react';
 import axiosClient from '../api/axiosClient';
 import { toast } from 'react-toastify';
@@ -28,13 +29,13 @@ const PartnerPage = () => {
   const [partners, setPartners] = useState(globalCache.partners || []); 
   const [loading, setLoading] = useState(!globalCache.partners);
 
-  // Đã xóa current_debt khỏi state mặc định
+  // Thêm mảng brand_discounts vào state mặc định
   const [formData, setFormData] = useState({
-    _id: null, name: '', phone: '', address: '', type: 'customer', is_wholesale: false, hide_price: false
+    _id: null, name: '', phone: '', address: '', type: 'customer', is_wholesale: false, hide_price: false, brand_discounts: []
   });
 
   const resetForm = () => {
-    setFormData({ _id: null, name: '', phone: '', address: '', type: 'customer', is_wholesale: false, hide_price: false });
+    setFormData({ _id: null, name: '', phone: '', address: '', type: 'customer', is_wholesale: false, hide_price: false, brand_discounts: [] });
     setIsEditMode(false);
   };
 
@@ -108,7 +109,7 @@ const PartnerPage = () => {
       if (isEditMode && formData._id) {
         await axiosClient.put(`/partners/${formData._id}`, formData);
         toast.success('Cập nhật thành công! ✏️');
-        triggerRefresh(['exports', 'imports', 'dashboard', 'partners']); // Bỏ debts khỏi triggerRefresh
+        triggerRefresh(['exports', 'imports', 'dashboard', 'partners']);
       } else {
         await axiosClient.post('/partners', formData);
         toast.success('Thêm đối tác thành công! 🎉');
@@ -128,9 +129,36 @@ const PartnerPage = () => {
   };
 
   const handleRowClick = (partner) => {
-    setFormData({ ...partner, is_wholesale: partner.is_wholesale || false, hide_price: partner.hide_price || false });
+    // Đảm bảo brand_discounts luôn là mảng khi load dữ liệu cũ lên
+    setFormData({ 
+        ...partner, 
+        is_wholesale: partner.is_wholesale || false, 
+        hide_price: partner.hide_price || false,
+        brand_discounts: partner.brand_discounts || []
+    });
     setIsEditMode(true); setShowModal(true);
   };
+
+  // --- CÁC HÀM XỬ LÝ CHIẾT KHẤU NHÃN HÀNG ---
+  const handleAddBrandDiscount = () => {
+    setFormData(prev => ({
+        ...prev,
+        brand_discounts: [...(prev.brand_discounts || []), { brand: '', discount_percent: 0 }]
+    }));
+  };
+
+  const handleUpdateBrandDiscount = (index, field, value) => {
+    const newDiscounts = [...formData.brand_discounts];
+    newDiscounts[index][field] = value;
+    setFormData({ ...formData, brand_discounts: newDiscounts });
+  };
+
+  const handleRemoveBrandDiscount = (index) => {
+    const newDiscounts = [...formData.brand_discounts];
+    newDiscounts.splice(index, 1);
+    setFormData({ ...formData, brand_discounts: newDiscounts });
+  };
+  // ------------------------------------------
 
   const renderTypeBadge = (type) => {
     if (type === 'customer') return <span className="bg-orange-100 text-orange-700 px-2 py-1 rounded text-xs font-bold border border-orange-200">Khách hàng</span>;
@@ -184,12 +212,10 @@ const PartnerPage = () => {
                 <th className="p-4 cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('phone')}><div className="flex items-center">Điện thoại {renderSortIcon('phone')}</div></th>
                 <th className="p-4">Địa chỉ</th>
                 <th className="p-4 text-center">Điểm gửi</th>
-                {/* Đã xóa cột Công nợ ở đây */}
                 <th className="p-4 text-center w-28">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y">
-              {/* Đã sửa colSpan từ 7 thành 6 */}
               {currentPartners.length === 0 ? ( <tr><td colSpan="6" className="p-8 text-center text-gray-500">{loading ? 'Đang tải...' : 'Không tìm thấy đối tác nào.'}</td></tr> ) : (
                 currentPartners.map((p) => (
                   <tr key={p._id} className="hover:bg-gray-100 transition-colors cursor-pointer group" onClick={() => handleRowClick(p)}>
@@ -198,7 +224,6 @@ const PartnerPage = () => {
                     <td className="p-4 text-gray-600 font-mono text-sm">{p.phone}</td>
                     <td className="p-4 text-gray-600 truncate max-w-xs">{p.address}</td>
                     <td className="p-4 text-center font-bold">{p.saved_points || 0}</td>
-                    {/* Đã xóa hiển thị dữ liệu Công nợ ở đây */}
                     <td className="p-4 text-center"><button onClick={(e) => handleDeletePartner(e, p._id, p.name)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-all" title="Xóa đối tác"><Trash2 size={18} /></button></td>
                   </tr>
                 ))
@@ -255,14 +280,70 @@ const PartnerPage = () => {
                   </div>
                   <div><label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1"><User size={16} /> Tên đối tác <span className="text-red-500">*</span></label><input type="text" className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 outline-none" placeholder="VD: Chị Lan, Kho Sữa..." value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required /></div>
                   <div><label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1"><MapPin size={16} /> Địa chỉ</label><textarea className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 outline-none resize-none h-24" placeholder="VD: 123 Đường ABC..." value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})}></textarea></div>
+                  
                   {formData.type === 'customer' && (
                     <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 space-y-3">
                       <h3 className="text-sm font-bold text-blue-800 uppercase tracking-wider">Cấu hình khách hàng</h3>
+                      
+                      {/* Toggles hiện có */}
                       <div className="flex items-center justify-between"><div className="flex items-center gap-2"><Crown size={18} className="text-yellow-600" /><span className="text-sm font-medium text-gray-700">Khách sỉ (Hưởng chiết khấu)</span></div><label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={formData.is_wholesale} onChange={(e) => setFormData({...formData, is_wholesale: e.target.checked})} /><div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div></label></div>
                       <div className="flex items-center justify-between border-t border-blue-200 pt-3"><div className="flex items-center gap-2"><EyeOff size={18} className="text-gray-500" /><span className="text-sm font-medium text-gray-700">Luôn ẩn giá khi in phiếu</span></div><label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={formData.hide_price} onChange={(e) => setFormData({...formData, hide_price: e.target.checked})} /><div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div></label></div>
+
+                      {/* --- KHU VỰC THÊM CHIẾT KHẤU NHÃN HÀNG --- */}
+                      <div className="border-t border-blue-200 pt-3 mt-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <Percent size={18} className="text-blue-600" />
+                            <span className="text-sm font-bold text-gray-700">Chiết khấu theo Nhãn hàng</span>
+                          </div>
+                          <button type="button" onClick={handleAddBrandDiscount} className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center gap-1 transition-colors">
+                            <PlusCircle size={16} /> Thêm
+                          </button>
+                        </div>
+                        
+                        <div className="space-y-2">
+                          {formData.brand_discounts && formData.brand_discounts.length > 0 ? (
+                            formData.brand_discounts.map((discount, index) => (
+                              <div key={index} className="flex gap-2 items-center bg-white p-2 rounded-lg border border-blue-200 shadow-sm">
+                                <div className="flex-1">
+                                  <input 
+                                    type="text" 
+                                    placeholder="Tên Nhãn (VD: Mămmy)" 
+                                    className="w-full border border-gray-300 rounded p-1.5 text-sm outline-none focus:ring-1 focus:ring-blue-500" 
+                                    value={discount.brand} 
+                                    onChange={(e) => handleUpdateBrandDiscount(index, 'brand', e.target.value)} 
+                                    required 
+                                  />
+                                </div>
+                                <div className="w-20 relative">
+                                  <input 
+                                    type="number" 
+                                    placeholder="%" 
+                                    className="w-full border border-gray-300 rounded p-1.5 pr-6 text-sm outline-none focus:ring-1 focus:ring-blue-500 text-right" 
+                                    value={discount.discount_percent} 
+                                    onChange={(e) => handleUpdateBrandDiscount(index, 'discount_percent', Number(e.target.value))} 
+                                    required 
+                                    min="0" 
+                                    max="100" 
+                                  />
+                                  <span className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 text-xs">%</span>
+                                </div>
+                                <button type="button" onClick={() => handleRemoveBrandDiscount(index)} className="text-red-400 hover:text-red-600 p-1 hover:bg-red-50 rounded transition-colors" title="Xóa dòng này">
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-xs text-gray-500 italic text-center py-2 bg-blue-50 rounded border border-dashed border-blue-200">
+                              Chưa có cấu hình chiết khấu nhãn hàng riêng. Nhấn "Thêm" để tạo.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      {/* ------------------------------------------ */}
+
                     </div>
                   )}
-                  {/* Đã xóa hiển thị "Công nợ hiện tại" trong Form Update ở đây */}
                 </div>
               </form>
             </div>
