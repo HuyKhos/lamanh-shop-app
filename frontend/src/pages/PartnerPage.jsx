@@ -333,16 +333,18 @@ const PartnerPage = () => {
                                   />
                                 </div>
                                 <div className="w-20 relative">
-                                  <input 
-                                    type="number" 
-                                    placeholder="%" 
-                                    className="w-full border border-gray-300 rounded p-1.5 pr-6 text-sm outline-none focus:ring-1 focus:ring-blue-500 text-right" 
-                                    value={discount.discount_percent} 
-                                    onChange={(e) => handleUpdateBrandDiscount(index, 'discount_percent', Number(e.target.value))} 
-                                    required 
-                                    min="0" 
-                                    max="100" 
-                                  />
+                                <input 
+                                  type="number" 
+                                  placeholder="%" 
+                                  className="w-full border border-gray-300 rounded p-1.5 pr-6 text-sm outline-none focus:ring-1 focus:ring-blue-500 text-right" 
+                                  value={discount.discount_percent} 
+                                  onChange={(e) => handleUpdateBrandDiscount(index, 'discount_percent', Number(e.target.value))} 
+                                  onFocus={(e) => e.target.select()}
+                                  onWheel={(e) => e.target.blur()}
+                                  required 
+                                  min="0" 
+                                  max="100" 
+                                />
                                   <span className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 text-xs">%</span>
                                 </div>
                                 <button type="button" onClick={() => handleRemoveBrandDiscount(index)} className="text-red-400 hover:text-red-600 p-1 hover:bg-red-50 rounded transition-colors" title="Xóa dòng này">

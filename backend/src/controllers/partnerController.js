@@ -4,14 +4,13 @@ import Partner from '../models/partnerModel.js';
 // @route   POST /api/partners
 const createPartner = async (req, res) => {
   try {
-    const { name, type, phone, address, is_wholesale, hide_price } = req.body;
+    // --- ĐÃ THÊM brand_discounts VÀO ĐÂY ---
+    const { name, type, phone, address, is_wholesale, hide_price, brand_discounts } = req.body; 
 
-    // Chỉ còn bắt buộc Tên
     if (!name) {
       return res.status(400).json({ message: 'Tên đối tác là bắt buộc!' });
     }
 
-    // Chỉ check trùng nếu có nhập số điện thoại
     if (phone) {
       const partnerExists = await Partner.findOne({ phone });
       if (partnerExists) {
@@ -22,10 +21,11 @@ const createPartner = async (req, res) => {
     const partner = new Partner({
       name,
       type,
-      phone: phone || undefined, // Nếu rỗng thì lưu là undefined để tránh lỗi unique index với chuỗi rỗng ""
+      phone: phone || undefined,
       address,
       is_wholesale: is_wholesale || false,
-      hide_price: hide_price || false
+      hide_price: hide_price || false,
+      brand_discounts: brand_discounts || [] // <-- ĐÃ THÊM DÒNG NÀY ĐỂ LƯU VÀO DB
     });
 
     const savedPartner = await partner.save();
@@ -35,23 +35,20 @@ const createPartner = async (req, res) => {
   }
 };
 
-// @desc    Lấy danh sách đối tác (Có tìm kiếm & Lọc)
+// @desc    Lấy danh sách đối tác
 // @route   GET /api/partners
 const getPartners = async (req, res) => {
   try {
     const { type, keyword } = req.query;
     let query = {};
 
-    // 1. Lọc theo loại (Khách hàng / NCC)
     if (type && type !== 'all') {
       query.type = type;
     }
 
-    // 2. Tìm kiếm thông minh (Regex)
-    // Tìm gần đúng trong Tên HOẶC Số điện thoại
     if (keyword) {
       query.$or = [
-        { name: { $regex: keyword, $options: 'i' } }, // 'i' nghĩa là không phân biệt hoa thường
+        { name: { $regex: keyword, $options: 'i' } }, 
         { phone: { $regex: keyword, $options: 'i' } }
       ];
     }
@@ -67,7 +64,8 @@ const getPartners = async (req, res) => {
 // @route   PUT /api/partners/:id
 const updatePartner = async (req, res) => {
   try {
-    const { name, type, phone, address, is_wholesale, hide_price, saved_points } = req.body;
+    // --- ĐÃ THÊM brand_discounts VÀO ĐÂY ---
+    const { name, type, phone, address, is_wholesale, hide_price, saved_points, brand_discounts } = req.body;
     const partner = await Partner.findById(req.params.id);
 
     if (partner) {
@@ -78,20 +76,19 @@ const updatePartner = async (req, res) => {
       if (is_wholesale !== undefined) partner.is_wholesale = is_wholesale;
       if (hide_price !== undefined) partner.hide_price = hide_price;
       
-      // CẬP NHẬT ĐIỂM GỬI
+      // --- ĐÃ THÊM DÒNG NÀY ĐỂ CẬP NHẬT VÀO DB ---
+      if (brand_discounts !== undefined) partner.brand_discounts = brand_discounts; 
+      
       if (saved_points !== undefined) partner.saved_points = saved_points;
 
-      // Logic cập nhật số điện thoại
-      if (phone !== undefined) { // Nếu có gửi trường phone lên (kể cả chuỗi rỗng)
+      if (phone !== undefined) { 
         if (phone && phone !== partner.phone) {
-           // Nếu có số và khác số cũ -> Check trùng
            const phoneExists = await Partner.findOne({ phone });
            if (phoneExists) {
              return res.status(400).json({ message: 'Số điện thoại mới bị trùng!' });
            }
            partner.phone = phone;
         } else if (!phone) {
-           // Nếu gửi lên chuỗi rỗng -> Xóa số điện thoại
            partner.phone = undefined;
         }
       }
@@ -113,8 +110,6 @@ const deletePartner = async (req, res) => {
     const partner = await Partner.findById(req.params.id);
 
     if (partner) {
-      // Logic mở rộng: Kiểm tra xem đối tác này có đang nợ tiền hoặc có đơn hàng không trước khi xóa
-      // Nhưng tạm thời cứ cho xóa thoải mái để test
       await partner.deleteOne();
       res.json({ message: 'Đã xóa đối tác thành công' });
     } else {
@@ -124,7 +119,5 @@ const deletePartner = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
-
-
 
 export { createPartner, getPartners, updatePartner, deletePartner };
