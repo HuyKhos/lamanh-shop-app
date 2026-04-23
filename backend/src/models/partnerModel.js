@@ -17,6 +17,13 @@ const partnerSchema = new mongoose.Schema({
     sparse: true
   },
   address: { type: String },
+  brand_discounts: [{
+    brand: { type: String, required: true },
+    discount_percent: { type: Number, default: 0 }
+  }],
+
+  is_wholesale: { type: Boolean, default: false },
+  is_active: { type: Boolean, default: true },
   
   saved_points: { type: Number, default: 0 },
   current_debt: { type: Number, default: 0 },

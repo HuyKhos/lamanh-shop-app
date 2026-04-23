@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 const productSchema = new mongoose.Schema({
   sku: { type: String, unique: true, sparse: true },
   name: { type: String, required: true, trim: true },
+  brand: { type: String, trim: true }, // <--- THÊM TRƯỜNG NÀY (VD: "Mămmy"
   unit: { type: String },
   
   import_price: { type: Number, default: 0 },

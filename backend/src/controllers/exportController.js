@@ -21,79 +21,80 @@ export const generateExportCode = async () => {
 };
 
 // --- 2. TẠO PHIẾU XUẤT (Đã bỏ Công nợ) ---
-const createExport = async (req, res) => {
+export const createExport = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
-    const { customer_id, details, total_amount, note, payment_due_date, idempotency_key } = req.body;
+    const { customer_id, details, note, payment_due_date, idempotency_key } = req.body;
 
-    if (!idempotency_key) {
-      throw new Error("Thiếu khóa bảo mật (idempotency_key). Vui lòng tải lại trang.");
-    }
-
-    if (!details || details.length === 0) throw new Error('Giỏ hàng rỗng');
+    // 1. Lấy thông tin khách hàng kèm cấu hình chiết khấu
+    const customer = await Partner.findById(customer_id).session(session);
+    if (!customer) throw new Error('Khách hàng không tồn tại');
 
     let totalPointsChange = 0;
+    let finalTotalAmount = 0; 
     const enrichedDetails = [];
 
-    // --- XỬ LÝ KHO & ĐIỂM ---
     for (const item of details) {
+      // 2. Lấy thông tin SP từ DB để đảm bảo nhãn hàng và giá niêm yết chính xác
+      const product = await Product.findById(item.product_id).session(session);
+      if (!product) throw new Error(`Sản phẩm ${item.product_id} không tồn tại.`);
+
+      // 3. LOGIC CHIẾT KHẤU THEO NHÃN HÀNG
+      // Tìm xem khách này có mức CK riêng cho nhãn hàng của SP này không
+      const brandConfig = customer.brand_discounts.find(d => d.brand === product.brand);
+      const discountPercent = brandConfig ? brandConfig.discount_percent : 0;
+      
+      // Tính giá xuất kho sau khi đã trừ chiết khấu nhãn hàng
+      const appliedPrice = product.export_price * (1 - discountPercent / 100);
+      const lineTotal = appliedPrice * item.quantity;
+      const lineProfit = lineTotal - (product.import_price * item.quantity);
+
+      // 4. Trừ kho (Atomic update)
       const productUpdate = await Product.findOneAndUpdate(
         { _id: item.product_id, current_stock: { $gte: item.quantity } },
         { $inc: { current_stock: -item.quantity } },
         { session, new: true }
       );
-      if (!productUpdate) throw new Error(`Sản phẩm ID ${item.product_id} không đủ hàng.`);
-      
-      totalPointsChange += (item.gift_points || 0) * item.quantity;
+      if (!productUpdate) throw new Error(`Sản phẩm ${product.name} không đủ hàng.`);
 
-      const importPrice = productUpdate.import_price || 0;
-      const lineProfit = (item.total || 0) - (importPrice * item.quantity);
+      totalPointsChange += (product.gift_points || 0) * item.quantity;
+      finalTotalAmount += lineTotal;
 
       enrichedDetails.push({
         ...item,
-        import_price: productUpdate.import_price || 0,
+        brand: product.brand,
+        export_price: appliedPrice,
+        discount: discountPercent, // Lưu lại % chiết khấu để hiển thị trên hóa đơn
+        import_price: product.import_price,
+        total: lineTotal,
         profit: lineProfit
       });
     }
 
-    // CẬP NHẬT: Chỉ cộng điểm cho khách, KHÔNG cộng current_debt nữa
-    const updatedCustomer = await Partner.findByIdAndUpdate(
-      customer_id,
-      { $inc: { saved_points: totalPointsChange } }, 
-      { session, new: true }
-    );
-    if (!updatedCustomer) throw new Error('Khách hàng không tồn tại');
+    // Cập nhật tích điểm cho khách
+    customer.saved_points += totalPointsChange;
+    await customer.save({ session });
 
-    // --- LƯU PHIẾU ---
+    // 5. Lưu phiếu xuất
     const code = await generateExportCode();
     const exportReceipt = new ExportReceipt({
-      code, 
-      customer_id, 
-      total_amount, 
-      note, 
-      details: enrichedDetails, 
-      payment_due_date,
-      partner_points_snapshot: updatedCustomer.saved_points,
-      idempotency_key
+      code, customer_id, 
+      total_amount: finalTotalAmount, 
+      details: enrichedDetails,
+      partner_points_snapshot: customer.saved_points,
+      idempotency_key, note, payment_due_date
     });
     
     await exportReceipt.save({ session });
 
-    // Đã xóa phần tạo bảng ghi DebtRecord ở đây
-
     await session.commitTransaction();
-    res.status(201).json({ receipt: exportReceipt, message: 'Xuất kho thành công!' });
+    res.status(201).json({ receipt: exportReceipt, message: 'Tạo đơn thành công với chiết khấu nhãn hàng!' });
 
   } catch (error) {
     await session.abortTransaction();
-    if (error.code === 11000 && error.keyPattern && error.keyPattern.idempotency_key) {
-      return res.status(409).json({ 
-        message: 'Giao dịch này đã được xử lý thành công trước đó (Trùng lặp thao tác).' 
-      });
-    }
-    res.status(400).json({ message: 'Lỗi tạo phiếu: ' + error.message });
+    res.status(400).json({ message: error.message });
   } finally {
     session.endSession();
   }
