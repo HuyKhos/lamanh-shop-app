@@ -7,7 +7,7 @@ import ExportReceipt from '../models/exportModel.js';
 const createProduct = async (req, res) => {
   try {
     const { 
-      sku, name, unit, 
+      sku, name, brand, unit, // <-- Thêm brand ở đây
       import_price, export_price, 
       discount_percent, gift_points, 
       min_stock 
@@ -18,7 +18,7 @@ const createProduct = async (req, res) => {
     }
 
     const product = new Product({
-      sku, name, unit,
+      sku, name, brand, unit, // <-- Thêm brand ở đây
       import_price, export_price,
       discount_percent, gift_points, min_stock
     });
@@ -27,9 +27,7 @@ const createProduct = async (req, res) => {
     res.status(201).json(createdProduct);
     
   } catch (error) {
-    // 11000 là mã lỗi trùng lặp dữ liệu của MongoDB
     if (error.code === 11000) {
-      // Kiểm tra xem trùng cái gì (ở đây là sku)
       if (error.keyPattern.sku) {
         return res.status(400).json({ message: `Mã sản phẩm "${req.body.sku}" đã tồn tại! Vui lòng chọn mã khác.` });
       }
@@ -43,7 +41,7 @@ const createProduct = async (req, res) => {
 const updateProduct = async (req, res) => {
   try {
     const { 
-      sku, name, unit, 
+      sku, name, brand, unit, // <-- Thêm brand ở đây
       import_price, export_price, 
       discount_percent, gift_points, 
       min_stock
@@ -54,6 +52,7 @@ const updateProduct = async (req, res) => {
     if (product) {
       product.sku = sku || product.sku;
       product.name = name || product.name;
+      product.brand = brand !== undefined ? brand : product.brand; // <-- Thêm dòng cập nhật brand này
       product.unit = unit || product.unit;
       product.import_price = import_price !== undefined ? import_price : product.import_price;
       product.export_price = export_price !== undefined ? export_price : product.export_price;
@@ -67,7 +66,6 @@ const updateProduct = async (req, res) => {
       res.status(404).json({ message: 'Không tìm thấy sản phẩm' });
     }
   } catch (error) {
-    // BẮT LỖI TRÙNG MÃ KHI SỬA
     if (error.code === 11000 && error.keyPattern.sku) {
       return res.status(400).json({ message: `Mã sản phẩm "${req.body.sku}" đã tồn tại ở một sản phẩm khác!` });
     }
@@ -94,9 +92,6 @@ const deleteProduct = async (req, res) => {
       return res.status(404).json({ message: 'Không tìm thấy sản phẩm' });
     }
 
-    // --- BƯỚC KIỂM TRA AN TOÀN (MỚI THÊM) ---
-    
-    // 1. Kiểm tra xem sản phẩm có nằm trong phiếu nhập nào không
     const inImport = await ImportReceipt.findOne({ "details.product_id": req.params.id });
     if (inImport) {
       return res.status(400).json({ 
@@ -104,7 +99,6 @@ const deleteProduct = async (req, res) => {
       });
     }
 
-    // 2. Kiểm tra xem sản phẩm có nằm trong phiếu xuất nào không
     const inExport = await ExportReceipt.findOne({ "details.product_id": req.params.id });
     if (inExport) {
       return res.status(400).json({ 
@@ -112,7 +106,6 @@ const deleteProduct = async (req, res) => {
       });
     }
 
-    // 3. Nếu sạch sẽ (chưa dùng bao giờ) thì mới cho xóa
     await product.deleteOne();
     res.json({ message: 'Đã xóa sản phẩm thành công' });
 
