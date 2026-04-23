@@ -308,10 +308,12 @@ const PartnerPage = () => {
                                 <div className="flex-1">
                                   <input 
                                     type="text" 
-                                    placeholder="Tên Nhãn (VD: Mămmy)" 
-                                    className="w-full border border-gray-300 rounded p-1.5 text-sm outline-none focus:ring-1 focus:ring-blue-500" 
+                                    list="partner-brand-suggestions"
+                                    placeholder="Chọn hoặc nhập nhãn hàng..." 
+                                    className="w-full border border-gray-300 rounded p-1.5 text-sm outline-none focus:ring-1 focus:ring-blue-500 bg-white" 
                                     value={discount.brand} 
                                     onChange={(e) => handleUpdateBrandDiscount(index, 'brand', e.target.value)} 
+                                    autoComplete="off"
                                     required 
                                   />
                                 </div>
@@ -339,6 +341,14 @@ const PartnerPage = () => {
                             </p>
                           )}
                         </div>
+                        <datalist id="partner-brand-suggestions">
+                          {Array.from(new Set([
+                            ...(globalCache.products?.map(p => p.brand) || []),
+                            ...partners.flatMap(p => p.brand_discounts?.map(d => d.brand) || [])
+                          ].filter(Boolean))).map((brandName, idx) => (
+                            <option key={idx} value={brandName} />
+                          ))}
+                        </datalist>
                       </div>
                       {/* ------------------------------------------ */}
 

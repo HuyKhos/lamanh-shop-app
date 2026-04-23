@@ -549,10 +549,26 @@ const ProductPage = () => {
               
               {/* --- ĐÃ SỬA THÀNH GRID 3 CỘT ĐỂ THÊM NHÃN HÀNG --- */}
               <div className="grid grid-cols-3 gap-6 mb-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1"><Tag size={16} className="text-gray-500" /> Nhãn hàng</label>
-                    <input type="text" className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 outline-none" placeholder="VD: Mămmy" value={formData.brand} onChange={(e) => setFormData({...formData, brand: e.target.value})} />
-                  </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                  <Tag size={16} className="text-gray-500" /> Nhãn hàng
+                </label>
+                <input 
+                  type="text" 
+                  list="brand-suggestions" 
+                  className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 outline-none bg-white" 
+                  placeholder="Chọn hoặc nhập mới..." 
+                  value={formData.brand} 
+                  onChange={(e) => setFormData({...formData, brand: e.target.value})} 
+                  autoComplete="off"
+                />
+                {/* DANH SÁCH DROPDOWN TỰ ĐỘNG LẤY TỪ CÁC SẢN PHẨM HIỆN CÓ */}
+                <datalist id="brand-suggestions">
+                  {Array.from(new Set(products.map(p => p.brand).filter(Boolean))).map((brandName, index) => (
+                    <option key={index} value={brandName} />
+                  ))}
+                </datalist>
+              </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Đơn vị tính</label>
                     <input type="text" className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 outline-none" value={formData.unit} onChange={(e) => setFormData({...formData, unit: e.target.value})} />
