@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom'; 
 import { 
-  ArrowDownToLine, Plus, Search, X, User, FileText, 
+  Plus, Search, X, User, FileText, 
   Trash2, Save, Menu, Barcode, Package, DollarSign,
   ArrowUpDown, ArrowUp, ArrowDown, Filter, FileSpreadsheet, Pencil, Eye, Loader2,
   ChevronLeft, ChevronRight, Upload, Download, RefreshCw
@@ -14,7 +14,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 const ImportPage = () => {
   const { isExpanded, setIsExpanded } = useOutletContext();
-  const { globalCache, refreshFlags, updateCache, triggerRefresh } = useOutletContext();
+  const { refreshFlags, updateCache, triggerRefresh } = useOutletContext();
 
   const INITIAL_IMPORT_STATE = {
     code: '', 
@@ -28,46 +28,42 @@ const ImportPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false); 
   const [isClosing, setIsClosing] = useState(false);
 
-  const [partners, setPartners] = useState([]);
+  // --- STATE DỮ LIỆU ---
   const [suppliers, setSuppliers] = useState([]); 
   const [products, setProducts] = useState([]);   
-  const [imports, setImports] = useState(globalCache.imports || []); 
-  const [loading, setLoading] = useState(!globalCache.imports);
+  const [imports, setImports] = useState([]); 
+  const [loading, setLoading] = useState(true);
 
+  // --- STATE TÌM KIẾM & PHÂN TRANG ---
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'default' });
-
-  // --- STATE PHÂN TRANG ---
+  const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' });
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10); 
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
   const [newImport, setNewImport] = useState(INITIAL_IMPORT_STATE);
-
   const [productSearch, setProductSearch] = useState('');
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [isSearchFocus, setIsSearchFocus] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
-  // --- STATE IDEMPOTENCY ---
   const [idempotencyKey, setIdempotencyKey] = useState(uuidv4());
 
-  // Tạo key mới khi mở modal
+  const searchInputRef = useRef(null); 
+  const listRef = useRef(null); 
+  const fileInputRef = useRef(null); 
+
   useEffect(() => {
       if (showModal && !isViewMode) {
           setIdempotencyKey(uuidv4());
       }
   }, [showModal, isViewMode]);
 
-  const searchInputRef = useRef(null); 
-  const listRef = useRef(null); 
-  const fileInputRef = useRef(null); 
-
-  // Utils Format
   const formatCurrency = (amount) => {
       if (amount === undefined || amount === null) return '0';
       return Number(amount).toLocaleString('vi-VN', { maximumFractionDigits: 0 });
   };
 
-  // --- HÀM ĐÓNG MODAL CÓ HIỆU ỨNG ---
   const handleCloseModal = () => {
     setIsClosing(true);
     setTimeout(() => {
@@ -76,42 +72,70 @@ const ImportPage = () => {
     }, 100);
   };
 
-  // --- LOAD DATA ---
-  useEffect(() => {
-    const loadData = async () => {
-      if (!globalCache.imports || refreshFlags.imports) {
-        try {
-          setLoading(true);
-          const res = await axiosClient.get('/imports');
-          setImports(res); 
-          updateCache('imports', res);
-        } catch (error) { console.error(error); } finally { setLoading(false); }
-      }
-    };
-    loadData();
-  }, [refreshFlags.imports]);
-
-  const fetchData = async () => {
+  // --- FETCH DỮ LIỆU ĐỘC LẬP TỪNG PHẦN ---
+  // 1. Chỉ Load danh sách Phiếu nhập (Có phân trang)
+  const fetchImports = useCallback(async () => {
     try {
       setLoading(true);
-      const [importRes, supplierRes, productRes] = await Promise.all([
-        axiosClient.get('/imports'),           
-        axiosClient.get('/partners?type=supplier'), 
-        axiosClient.get('/products')           
-      ]);
-      setImports(importRes);
-      updateCache('imports', importRes);
-      setSuppliers(supplierRes);
-      setProducts(productRes);
-    } catch (error) { toast.error('Lỗi tải dữ liệu'); } finally { setLoading(false); }
-  };
+      const params = new URLSearchParams({
+        page: currentPage,
+        limit: itemsPerPage,
+        search: searchTerm,
+        sortKey: sortConfig.key || 'createdAt',
+        sortDir: sortConfig.direction === 'asc' ? 'asc' : 'desc'
+      });
+
+      const res = await axiosClient.get(`/imports?${params.toString()}`);
+      if (res && res.pagination) {
+          setImports(res.data);
+          setTotalItems(res.pagination.totalItems);
+          setTotalPages(res.pagination.totalPages);
+      } else if (Array.isArray(res)) {
+          setImports(res);
+          setTotalItems(res.length);
+          setTotalPages(1);
+      } else {
+          setImports([]);
+      }
+    } catch (error) {
+      toast.error('Lỗi tải danh sách phiếu nhập');
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  }, [currentPage, itemsPerPage, searchTerm, sortConfig]);
+
+  // 2. Load dữ liệu phụ cho Modal (Nhà cung cấp & Sản phẩm)
+  useEffect(() => {
+    const fetchFormDependencies = async () => {
+      try {
+        const [supplierRes, productRes] = await Promise.all([
+          axiosClient.get('/partners?type=supplier'), 
+          axiosClient.get('/products')           
+        ]);
+        setSuppliers(supplierRes);
+        setProducts(productRes);
+      } catch (error) { console.error("Lỗi tải dependency cho form:", error); }
+    };
+    fetchFormDependencies();
+  }, []);
+
+  // Gọi API fetchImports mỗi khi trang, limit, sort, refresh thay đổi
+  useEffect(() => {
+    fetchImports();
+  }, [currentPage, itemsPerPage, sortConfig, refreshFlags.imports]);
+
+  // DEBOUNCE Tìm kiếm
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      setCurrentPage(1); 
+      fetchImports();
+    }, 500);
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchTerm]);
 
   const supplierOptions = suppliers.map(s => ({ value: s._id, label: s.name }));
 
-  useEffect(() => { fetchData(); }, []);
-  useEffect(() => { setCurrentPage(1); }, [searchTerm, sortConfig]);
-
-  // --- UI SCROLL & FOCUS ---
   useEffect(() => {
     if (activeIndex !== -1 && listRef.current) {
       const listItems = listRef.current.children;
@@ -121,7 +145,6 @@ const ImportPage = () => {
     }
   }, [activeIndex]);
 
-  // Tự động focus vào ô số lượng khi thêm sản phẩm mới
   useEffect(() => {
     if (newImport.details.length > 0) {
       const lastIndex = newImport.details.length - 1;
@@ -133,13 +156,10 @@ const ImportPage = () => {
     }
   }, [newImport.details.length]);
 
-  // --- LOGIC FORM: LƯU NHÁP & KHÔI PHỤC (Local Storage) ---
   const DRAFT_KEY = 'import_draft_data';
 
-  // 1. Lưu nháp (CHỈ LƯU SẢN PHẨM)
   useEffect(() => {
     if (showModal && !isViewMode) {
-       // Chỉ lưu khi có sản phẩm trong giỏ
        if (newImport.details.length > 0) {
            const draftData = { details: newImport.details };
            localStorage.setItem(DRAFT_KEY, JSON.stringify(draftData));
@@ -147,10 +167,8 @@ const ImportPage = () => {
     }
   }, [newImport.details, showModal, isViewMode]);
 
-  // 2. Khôi phục
   useEffect(() => {
     if (showModal && !isViewMode) {
-      // Reset trạng thái ban đầu và hiện 'Đang tải...'
       setNewImport(prev => ({ ...INITIAL_IMPORT_STATE, code: 'Đang tải...' }));
       setProductSearch('');
       setFilteredProducts([]);
@@ -158,13 +176,8 @@ const ImportPage = () => {
 
       const initForm = async () => {
          try {
-             // Luôn lấy mã phiếu mới từ API
              const res = await axiosClient.get('/imports/new-code');
-             
-             // Tạo state mới với mã vừa lấy
              let nextState = { ...INITIAL_IMPORT_STATE, code: res.code };
-
-             // Kiểm tra và khôi phục sản phẩm nháp (nếu có)
              const savedDraft = localStorage.getItem(DRAFT_KEY);
              if (savedDraft) {
                  try {
@@ -175,26 +188,17 @@ const ImportPage = () => {
                      }
                  } catch (e) { localStorage.removeItem(DRAFT_KEY); }
              }
-             
              setNewImport(nextState);
-         } catch (error) { 
-             console.error(error); 
-         }
+         } catch (error) { console.error(error); }
       };
-      
       initForm();
     }
   }, [showModal, isViewMode]);
 
   const handleResetForm = () => {
     if (window.confirm('Xóa hết dữ liệu đang nhập để tạo phiếu mới?')) {
-        // Xóa bộ nhớ đệm
         localStorage.removeItem(DRAFT_KEY);
-        
-        // Tạo key chống trùng lặp mới
         setIdempotencyKey(uuidv4());
-        
-        // Reset state và lấy mã mới
         setNewImport(prev => ({ ...INITIAL_IMPORT_STATE, code: 'Đang tải...' }));
         
         const fetchNewCode = async () => {
@@ -208,47 +212,11 @@ const ImportPage = () => {
     }
   };
 
-  // --- XỬ LÝ DỮ LIỆU & PHÂN TRANG TABLE CHÍNH ---
-  const getProcessedImports = () => {
-    let result = [...imports];
-    if (searchTerm) {
-      const lowerTerm = searchTerm.toLowerCase();
-      result = result.filter(item => {
-        const matchCode = item.code?.toLowerCase().includes(lowerTerm);
-        const matchSupplier = item.supplier_id?.name?.toLowerCase().includes(lowerTerm);
-        const matchProduct = item.details?.some(d => {
-          const nameMatch = d.product_name_backup?.toLowerCase().includes(lowerTerm);
-          const skuMatch = d.sku?.toLowerCase().includes(lowerTerm);
-          return nameMatch || skuMatch;
-        });
-        return matchCode || matchSupplier || matchProduct;
-      });
-    }
-    if (sortConfig.key) {
-      result.sort((a, b) => {
-        let aValue, bValue;
-        if (sortConfig.key === 'supplier') {
-          aValue = a.supplier_id?.name || '';
-          bValue = b.supplier_id?.name || '';
-        } else {
-          aValue = a[sortConfig.key];
-          bValue = b[sortConfig.key];
-        }
-        if (aValue === undefined || aValue === null) aValue = '';
-        if (bValue === undefined || bValue === null) bValue = '';
-        if (typeof aValue === 'string') {
-          return sortConfig.direction === 'asc' ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue);
-        }
-        return sortConfig.direction === 'asc' ? aValue - bValue : bValue - aValue;
-      });
-    }
-    return result;
-  };
-
   const handleSort = (key) => {
     let direction = 'asc';
     if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
     setSortConfig({ key, direction });
+    setCurrentPage(1);
   };
 
   const renderSortIcon = (key) => {
@@ -256,15 +224,8 @@ const ImportPage = () => {
     return sortConfig.direction === 'asc' ? <ArrowUp size={14} className="text-blue-600 ml-1" /> : <ArrowDown size={14} className="text-blue-600 ml-1" />;
   };
 
-  const processedImports = getProcessedImports();
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentItems = processedImports.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(processedImports.length / itemsPerPage);
-
   const paginate = (pageNumber) => { if (pageNumber > 0 && pageNumber <= totalPages) setCurrentPage(pageNumber); };
 
-  // --- LOGIC TÌM KIẾM SẢN PHẨM (SMART SEARCH) ---
   useEffect(() => {
     if (!isSearchFocus && productSearch.trim() === '') {
       setFilteredProducts([]); 
@@ -275,7 +236,6 @@ const ImportPage = () => {
     if (isSearchFocus && productSearch.trim() === '') {
       results = products;
     } else {
-      // Logic tìm kiếm đa từ khóa (Giống ExportPage)
       const searchKeywords = productSearch.toLowerCase().split(/\s+/).filter(word => word.length > 0);
       results = products.filter(p => {
         const productName = p.name.toLowerCase();
@@ -290,7 +250,6 @@ const ImportPage = () => {
     else setActiveIndex(-1);
   }, [productSearch, products, isSearchFocus]);
 
-  // --- KEYBOARD NAVIGATION (GIỐNG EXPORT PAGE) ---
   const handleKeyDown = (e) => {
     if (filteredProducts.length === 0) return;
 
@@ -316,18 +275,15 @@ const ImportPage = () => {
     }
   };
 
-  // Khi Enter ở ô Số lượng -> Focus lại ô tìm kiếm để nhập tiếp
   const handleQuantityKeyDown = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (searchInputRef.current) {
-        searchInputRef.current.focus();
-      }
+      if (searchInputRef.current) searchInputRef.current.focus();
     }
   };
 
   const addProductToImport = (product) => {
-    const finalPrice = Math.round(product.import_price || 0); // Làm tròn giá
+    const finalPrice = Math.round(product.import_price || 0);
     const newItem = {
       product_id: product._id,
       product_name_backup: product.name,
@@ -347,31 +303,22 @@ const ImportPage = () => {
     setActiveIndex(-1);
   };
   
-  const preventNumberInputScroll = (e) => {
-    if (e.type === 'wheel') e.target.blur();
-  };
+  const preventNumberInputScroll = (e) => { if (e.type === 'wheel') e.target.blur(); };
 
-  // --- UPDATE CHI TIẾT (LAZY VALIDATION & MATH.ROUND) ---
   const updateDetail = (index, field, value) => {
     const updatedDetails = [...newImport.details];
-    
-    // 1. Cho phép gán giá trị rỗng '' vào state
     const val = value === '' ? '' : Number(value);
     updatedDetails[index][field] = val;
 
-    // 2. Tính toán Thành tiền an toàn
     const qty = field === 'quantity' ? (val === '' ? 0 : val) : (updatedDetails[index].quantity === '' ? 0 : updatedDetails[index].quantity);
     const price = field === 'import_price' ? (val === '' ? 0 : val) : (updatedDetails[index].import_price === '' ? 0 : updatedDetails[index].import_price);
     
     updatedDetails[index].total = Math.round(qty * price);
-    
     setNewImport({ ...newImport, details: updatedDetails });
   };
 
   const handleBlur = (index, field) => {
     const detailItem = newImport.details[index];
-    
-    // Nếu giá trị đang là chuỗi rỗng '', thì reset về 0
     if (detailItem[field] === '') {
         const updatedDetails = [...newImport.details];
         updatedDetails[index][field] = 0;
@@ -379,11 +326,9 @@ const ImportPage = () => {
         const qty = updatedDetails[index].quantity;
         const price = updatedDetails[index].import_price;
         updatedDetails[index].total = Math.round(qty * price);
-
         setNewImport({ ...newImport, details: updatedDetails });
     }
 
-    // Xử lý làm tròn Giá nhập khi người dùng nhập số lẻ rồi bấm ra ngoài
     if (field === 'import_price' && typeof detailItem[field] === 'number') {
          const updatedDetails = [...newImport.details];
          updatedDetails[index][field] = Math.round(detailItem[field]);
@@ -391,7 +336,6 @@ const ImportPage = () => {
          const qty = updatedDetails[index].quantity;
          const price = updatedDetails[index][field];
          updatedDetails[index].total = Math.round(qty * price);
-         
          setNewImport({ ...newImport, details: updatedDetails });
     }
   };
@@ -404,7 +348,6 @@ const ImportPage = () => {
   const calculateTotalAmount = () => Math.round(newImport.details.reduce((sum, item) => sum + item.total, 0));
   const calculateTotalQuantity = () => newImport.details.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
 
-  // --- XỬ LÝ IMPORT EXCEL ---
   const handleDownloadTemplate = () => {
     const templateData = [ ['Tên sản phẩm', 'Số lượng'], ['Sữa Ông Thọ', 10], ['Bánh Mì', 5] ];
     const ws = XLSX.utils.aoa_to_sheet(templateData);
@@ -416,7 +359,6 @@ const ImportPage = () => {
   const handleImportExcel = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
@@ -432,14 +374,11 @@ const ImportPage = () => {
         for (let i = 1; i < data.length; i++) {
           const row = data[i];
           if (!row || row.length === 0) continue;
-
           const productName = row[0] ? String(row[0]).trim() : '';
           const quantity = row[1] ? Number(row[1]) : 1;
-
           if (!productName) continue;
 
           const product = products.find(p => p.name.toLowerCase() === productName.toLowerCase());
-
           if (product) {
             const finalPrice = Math.round(product.import_price || 0);
             importedDetails.push({
@@ -455,7 +394,6 @@ const ImportPage = () => {
             notFoundProducts.push(productName);
           }
         }
-
         if (importedDetails.length > 0) {
           setNewImport(prev => ({ ...prev, details: [...prev.details, ...importedDetails] }));
           toast.success(`Đã thêm ${importedDetails.length} sản phẩm từ file!`);
@@ -469,7 +407,6 @@ const ImportPage = () => {
     reader.readAsBinaryString(file);
   };
 
-  // --- API ACTIONS ---
   const handleSaveImport = async () => {
     if (!newImport.supplier_id) return toast.warning('Chọn Nhà cung cấp');
     if (newImport.details.length === 0) return toast.warning('Chưa có sản phẩm');
@@ -477,28 +414,23 @@ const ImportPage = () => {
 
     try {
       setIsSubmitting(true);
-      
       const payload = {
         ...newImport,
         total_amount: calculateTotalAmount(),
         total_quantity: calculateTotalQuantity(),
-        idempotency_key: idempotencyKey // <--- THÊM DÒNG NÀY
+        idempotency_key: idempotencyKey 
       };
 
       await axiosClient.post('/imports', payload);
-      
       localStorage.removeItem(DRAFT_KEY);
-      
       toast.success('Nhập kho thành công! 🎉');
       triggerRefresh(['exports', 'products', 'debts', 'dashboard', 'partners']);
       setNewImport(INITIAL_IMPORT_STATE);
-      
-      setIdempotencyKey(uuidv4()); // <--- Reset key sau khi thành công
+      setIdempotencyKey(uuidv4()); 
       
       handleCloseModal();
-      fetchData();
+      fetchImports(); // Refresh list hiện tại
     } catch (error) {
-      // Giữ nguyên key nếu lỗi để retry
       toast.error('Lỗi: ' + (error.response?.data?.message || error.message));
     } finally {
       setIsSubmitting(false);
@@ -512,7 +444,12 @@ const ImportPage = () => {
         await axiosClient.delete(`/imports/${id}`);
         toast.success('Đã xóa phiếu nhập');
         triggerRefresh(['exports', 'products', 'debts', 'dashboard', 'partners']);
-        fetchData();
+        
+        if (imports.length === 1 && currentPage > 1) {
+            setCurrentPage(currentPage - 1);
+        } else {
+            fetchImports();
+        }
       } catch (error) {
         toast.error('Lỗi xóa: ' + error.message);
       }
@@ -589,8 +526,15 @@ const ImportPage = () => {
         </div>
       </div>
 
-      {/* TABLE */}
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+      {/* TABLE BÊN TRONG BỌC LỚP LOADING OVERLAY NHƯ SẢN PHẨM */}
+      <div className="bg-white rounded-xl shadow-sm border overflow-hidden relative min-h-[400px]">
+        
+        {loading && (
+             <div className="absolute inset-0 bg-white bg-opacity-60 z-10 flex items-center justify-center">
+                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+             </div>
+        )}
+
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead className="bg-blue-50 text-gray-600 font-semibold text-sm border-b">
@@ -605,10 +549,10 @@ const ImportPage = () => {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {currentItems.length === 0 ? (
-                <tr><td colSpan="7" className="p-8 text-center text-gray-500">{loading ? 'Đang tải...' : 'Chưa có phiếu nhập nào.'}</td></tr>
+              {!loading && imports.length === 0 ? (
+                <tr><td colSpan="7" className="p-8 text-center text-gray-500">Chưa có phiếu nhập nào.</td></tr>
               ) : (
-                currentItems.map((item) => (
+                imports.map((item) => (
                   <tr key={item._id} className="hover:bg-gray-100 transition-colors cursor-pointer group" onClick={() => handleRowClick(item)}>
                     <td className="p-4 font-bold text-blue-600 text-sm font-mono">{item.code}</td>
                     <td className="p-4 text-gray-800">{new Date(item.date).toLocaleDateString('vi-VN')}</td>
@@ -631,25 +575,25 @@ const ImportPage = () => {
           </table>
         </div>
 
-        {/* --- THANH PHÂN TRANG UI --- */}
-        {processedImports.length > 0 && (
+        {/* --- THANH PHÂN TRANG UI (CẬP NHẬT TỪ SERVER STATE) --- */}
+        {totalItems > 0 && (
             <div className="flex items-center justify-between px-4 py-3 border-t">
               <div className="text-sm text-gray-500">
-                Hiển thị {indexOfFirstItem + 1}-{Math.min(indexOfLastItem, processedImports.length)} trong số {processedImports.length} phiếu
+                Hiển thị {((currentPage - 1) * itemsPerPage) + 1}-{Math.min(currentPage * itemsPerPage, totalItems)} trong số {totalItems} phiếu
               </div>
               <div className="flex items-center gap-2">
-                <select className="border border-gray-300 rounded-md text-sm px-2 py-1 focus:ring-1 focus:ring-blue-500 outline-none" value={itemsPerPage} onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}>
+                <select className="border border-gray-300 rounded-md text-sm px-2 py-1 focus:ring-1 focus:ring-blue-500 outline-none cursor-pointer bg-white" value={itemsPerPage} onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}>
                   <option value="10">10 dòng</option><option value="20">20 dòng</option><option value="50">50 dòng</option><option value="100">100 dòng</option>
                 </select>
-                <button onClick={() => paginate(currentPage - 1)} disabled={currentPage === 1} className={`p-1 rounded-md border ${currentPage === 1 ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50'}`}><ChevronLeft size={20} /></button>
-                <div className="flex gap-1">{Array.from({ length: Math.min(5, totalPages) }, (_, i) => { let pageNum = i + 1; if (totalPages > 5) { if (currentPage > 3) pageNum = currentPage - 2 + i; if (pageNum > totalPages) pageNum = totalPages - 4 + i; } return (<button key={pageNum} onClick={() => paginate(pageNum)} className={`w-8 h-8 flex items-center justify-center rounded-md text-sm font-medium transition-colors ${ currentPage === pageNum ? 'bg-blue-600 text-white shadow-sm' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50' }`}>{pageNum}</button>) })}</div>
-                <button onClick={() => paginate(currentPage + 1)} disabled={currentPage === totalPages} className={`p-1 rounded-md border ${currentPage === totalPages ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50'}`}><ChevronRight size={20} /></button>
+                <button onClick={() => paginate(currentPage - 1)} disabled={currentPage === 1} className={`p-1 rounded-md border ${currentPage === 1 ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50 cursor-pointer'}`}><ChevronLeft size={20} /></button>
+                <div className="flex gap-1">{Array.from({ length: Math.min(5, totalPages) }, (_, i) => { let pageNum = i + 1; if (totalPages > 5) { if (currentPage > 3) pageNum = currentPage - 2 + i; if (pageNum > totalPages) pageNum = totalPages - 4 + i; } return (<button key={pageNum} onClick={() => paginate(pageNum)} className={`w-8 h-8 flex items-center justify-center rounded-md text-sm font-medium transition-colors ${ currentPage === pageNum ? 'bg-blue-600 text-white shadow-sm cursor-default' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 cursor-pointer' }`}>{pageNum}</button>) })}</div>
+                <button onClick={() => paginate(currentPage + 1)} disabled={currentPage === totalPages} className={`p-1 rounded-md border ${currentPage === totalPages ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50 cursor-pointer'}`}><ChevronRight size={20} /></button>
               </div>
             </div>
         )}
       </div>
 
-      {/* --- MODAL --- */}
+      {/* --- MODAL (GIỮ NGUYÊN HOÀN TOÀN CỦA BẠN) --- */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 backdrop-blur-sm p-4">
           <div 
@@ -765,7 +709,7 @@ const ImportPage = () => {
                             <input 
                                id={`quantity-${index}`} 
                                onKeyDown={handleQuantityKeyDown} 
-                               onFocus={(e) => e.target.select()} // Tự động bôi đen
+                               onFocus={(e) => e.target.select()} 
                                onBlur={() => handleBlur(index, 'quantity')}
                                type="number" min="0" 
                                className="w-20 border border-gray-300 rounded p-1.5 text-right focus:ring-1 focus:ring-blue-500 outline-none font-bold text-gray-800" 
@@ -781,9 +725,9 @@ const ImportPage = () => {
                                onFocus={(e) => e.target.select()} 
                                onBlur={() => handleBlur(index, 'import_price')}
                                className="w-32 border border-gray-300 rounded p-1.5 text-right focus:ring-1 focus:ring-blue-500 outline-none" 
-                               value={item.import_price ? Number(item.import_price).toLocaleString('vi-VN') : ''} // Hiện dấu chấm
+                               value={item.import_price ? Number(item.import_price).toLocaleString('vi-VN') : ''} 
                                onChange={(e) => {
-                                   const rawValue = e.target.value.replace(/\./g, ''); // Xóa dấu chấm để lấy số
+                                   const rawValue = e.target.value.replace(/\./g, ''); 
                                    if (/^\d*$/.test(rawValue)) {
                                        updateDetail(index, 'import_price', rawValue);
                                    }
@@ -805,7 +749,6 @@ const ImportPage = () => {
               </div>
             </div>
 
-            {/* --- FOOTER MODAL (ĐÃ CĂN PHẢI GIỐNG EXPORT PAGE) --- */}
             <div className="p-5 border-t bg-white flex justify-end items-center rounded-b-xl gap-6">
               
               <div className="text-gray-600 font-medium flex items-center gap-2">
