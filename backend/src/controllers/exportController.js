@@ -1,26 +1,23 @@
-import mongoose from 'mongoose'; // Cần thêm để dùng session
+import mongoose from 'mongoose';
 import ExportReceipt from '../models/exportModel.js';
 import Product from '../models/productModel.js';
 import Partner from '../models/partnerModel.js';
 import Counter from '../models/counterModel.js';
+import PointsHistory from '../models/pointsHistoryModel.js'; 
 
-// --- 1. HÀM SINH MÃ TỰ ĐỘNG ---
-export const generateExportCode = async () => {
+export const generateExportCode = async (session = null) => {
   const now = new Date();
   const dateInVietnam = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
-  const dateStr = `${dateInVietnam.getFullYear().toString().slice(-2)}${String(dateInVietnam.getMonth() + 1).padStart(2, '0')}${String(dateInVietnam.getDate()).padStart(2, '0')}`; 
-  
+  const dateStr = `${dateInVietnam.getFullYear().toString().slice(-2)}${String(dateInVietnam.getMonth() + 1).padStart(2, '0')}${String(dateInVietnam.getDate()).padStart(2, '0')}`;
   const counterId = `export_${dateStr}`;
-  const counter = await Counter.findByIdAndUpdate(
-    counterId,
-    { $inc: { seq: 1 } },
-    { new: true, upsert: true, setDefaultsOnInsert: true }
-  );
+  
+  const options = { new: true, upsert: true, setDefaultsOnInsert: true };
+  if (session) options.session = session;
 
+  const counter = await Counter.findByIdAndUpdate(counterId, { $inc: { seq: 1 } }, options);
   return `XK-${dateStr}-${String(counter.seq).padStart(3, '0')}`;
 };
 
-// --- 2. TẠO PHIẾU XUẤT (Đã bỏ Công nợ) ---
 const createExport = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -28,79 +25,101 @@ const createExport = async (req, res) => {
   try {
     const { customer_id, details, note, payment_due_date, idempotency_key } = req.body;
 
-    // 1. Lấy thông tin khách hàng kèm cấu hình chiết khấu
+    if (!idempotency_key) throw new Error("Thiếu khóa bảo mật (idempotency_key)");
+    if (!details || details.length === 0) throw new Error('Giỏ hàng rỗng');
+
     const customer = await Partner.findById(customer_id).session(session);
     if (!customer) throw new Error('Khách hàng không tồn tại');
 
     let totalPointsChange = 0;
-    let finalTotalAmount = 0; 
+    let finalTotalAmount = 0;
     const enrichedDetails = [];
 
     for (const item of details) {
-      // 2. Lấy thông tin SP từ DB để đảm bảo nhãn hàng và giá niêm yết chính xác
       const product = await Product.findById(item.product_id).session(session);
-      if (!product) throw new Error(`Sản phẩm ${item.product_id} không tồn tại.`);
+      if (!product) throw new Error(`Sản phẩm ID ${item.product_id} không tồn tại.`);
 
-      // 3. LOGIC CHIẾT KHẤU THEO NHÃN HÀNG
-      // Tìm xem khách này có mức CK riêng cho nhãn hàng của SP này không
-      const brandConfig = customer.brand_discounts.find(d => d.brand === product.brand);
-      const discountPercent = brandConfig ? brandConfig.discount_percent : 0;
+      // Logic Chiết khấu nhãn hàng
+      const brandConfig = customer.brand_discounts?.find(d => d.brand === product.brand);
+      const discountPercent = brandConfig ? brandConfig.discount_percent : (customer.is_wholesale ? (product.discount_percent || 0) : 0);
       
-      // Tính giá xuất kho sau khi đã trừ chiết khấu nhãn hàng
-      const appliedPrice = product.export_price * (1 - discountPercent / 100);
-      const lineTotal = appliedPrice * item.quantity;
-      const lineProfit = lineTotal - (product.import_price * item.quantity);
+      const basePrice = item.export_price || product.export_price;
+      const appliedPrice = basePrice * (1 - discountPercent / 100);
+      const lineTotal = Math.round(appliedPrice * item.quantity);
 
-      // 4. Trừ kho (Atomic update)
       const productUpdate = await Product.findOneAndUpdate(
         { _id: item.product_id, current_stock: { $gte: item.quantity } },
         { $inc: { current_stock: -item.quantity } },
         { session, new: true }
       );
       if (!productUpdate) throw new Error(`Sản phẩm ${product.name} không đủ hàng.`);
-
+      
       totalPointsChange += (product.gift_points || 0) * item.quantity;
       finalTotalAmount += lineTotal;
 
       enrichedDetails.push({
         ...item,
         brand: product.brand,
-        export_price: appliedPrice,
-        discount: discountPercent, // Lưu lại % chiết khấu để hiển thị trên hóa đơn
-        import_price: product.import_price,
+        export_price: basePrice, 
+        discount: discountPercent,
         total: lineTotal,
-        profit: lineProfit
+        import_price: product.import_price || 0,
+        profit: lineTotal - ((product.import_price || 0) * item.quantity)
       });
     }
 
-    // Cập nhật tích điểm cho khách
-    customer.saved_points += totalPointsChange;
-    await customer.save({ session });
+    let updatedCustomer = customer;
+    if (totalPointsChange !== 0) {
+      updatedCustomer = await Partner.findByIdAndUpdate(
+        customer_id,
+        { $inc: { saved_points: totalPointsChange } }, 
+        { session, new: true }
+      );
+    }
 
-    // 5. Lưu phiếu xuất
-    const code = await generateExportCode();
+    const code = await generateExportCode(session);
     const exportReceipt = new ExportReceipt({
-      code, customer_id, 
-      total_amount: finalTotalAmount, 
-      details: enrichedDetails,
-      partner_points_snapshot: customer.saved_points,
-      idempotency_key, note, payment_due_date
+      code, customer_id, total_amount: finalTotalAmount, note, 
+      details: enrichedDetails, payment_due_date,
+      partner_points_snapshot: updatedCustomer.saved_points,
+      idempotency_key
     });
-    
-    await exportReceipt.save({ session });
+    const savedReceipt = await exportReceipt.save({ session });
+
+    if (totalPointsChange !== 0) {
+      const history = new PointsHistory({
+        partner_id: customer_id,
+        amount: totalPointsChange,
+        type: totalPointsChange > 0 ? 'plus' : 'minus',
+        reason: `Tích điểm từ đơn hàng ${code}`,
+        reference_id: savedReceipt._id,
+        balance_snapshot: updatedCustomer.saved_points
+      });
+      await history.save({ session });
+    }
 
     await session.commitTransaction();
-    res.status(201).json({ receipt: exportReceipt, message: 'Tạo đơn thành công với chiết khấu nhãn hàng!' });
+    res.status(201).json({ receipt: savedReceipt, message: 'Xuất kho và tích điểm thành công!' });
 
   } catch (error) {
     await session.abortTransaction();
-    res.status(400).json({ message: error.message });
+    if (error.code === 11000) return res.status(409).json({ message: 'Đơn hàng đã được xử lý trước đó.' });
+    res.status(400).json({ message: 'Lỗi: ' + error.message });
   } finally {
     session.endSession();
   }
 };
 
-// --- 3. XÓA PHIẾU (Đã bỏ Công nợ) ---
+const updateExport = async (req, res) => {
+    try {
+        const { note, hide_price } = req.body;
+        const updatedExport = await ExportReceipt.findByIdAndUpdate(
+            req.params.id, { note, hide_price }, { new: true }
+        );
+        res.json(updatedExport);
+    } catch (error) { res.status(500).json({ message: error.message }); }
+};
+
 const deleteExport = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -109,37 +128,36 @@ const deleteExport = async (req, res) => {
     const receipt = await ExportReceipt.findById(req.params.id).session(session);
     if (!receipt) throw new Error('Không tìm thấy phiếu');
 
-    // 1. Hoàn lại kho (Atomic)
     for (const item of receipt.details) {
       await Product.findByIdAndUpdate(
-        item.product_id,
-        { $inc: { current_stock: item.quantity } },
-        { session }
+        item.product_id, { $inc: { current_stock: item.quantity } }, { session }
       );
     }
 
-    // 2. Tính lại điểm cần hoàn
     let pointsToRevert = 0;
-    for (const item of receipt.details) {
+    receipt.details.forEach(item => {
       pointsToRevert += (item.gift_points || 0) * item.quantity;
+    });
+
+    if (pointsToRevert > 0) {
+      const updatedCustomer = await Partner.findByIdAndUpdate(
+        receipt.customer_id, { $inc: { saved_points: -pointsToRevert } }, { session, new: true }
+      );
+
+      const history = new PointsHistory({
+        partner_id: receipt.customer_id,
+        amount: -pointsToRevert,
+        type: 'minus',
+        reason: `Hoàn điểm do xóa đơn ${receipt.code}`,
+        reference_id: receipt._id,
+        balance_snapshot: updatedCustomer ? updatedCustomer.saved_points : 0
+      });
+      await history.save({ session });
     }
 
-    // 3. CẬP NHẬT: Chỉ hoàn lại Điểm cho khách (không trừ current_debt nữa)
-    await Partner.findByIdAndUpdate(
-      receipt.customer_id,
-      { 
-        $inc: { 
-          saved_points: -pointsToRevert 
-        } 
-      },
-      { session }
-    );
-
-    // 4. Xóa phiếu (Đã bỏ phần xóa DebtRecord)
     await ExportReceipt.deleteOne({ _id: receipt._id }).session(session);
-
     await session.commitTransaction();
-    res.json({ message: 'Đã xóa phiếu, hoàn kho và điểm thành công.' });
+    res.json({ message: 'Đã xóa phiếu xuất và hoàn tác dữ liệu thành công.' });
 
   } catch (error) {
     await session.abortTransaction();
@@ -147,26 +165,6 @@ const deleteExport = async (req, res) => {
   } finally {
     session.endSession();
   }
-};
-
-// --- GIỮ NGUYÊN CÁC HÀM KHÁC ---
-const getExports = async (req, res) => {
-  try {
-    const exports = await ExportReceipt.find({}).populate('customer_id', 'name phone address saved_points').sort({ createdAt: -1 });
-    res.json(exports);
-  } catch (error) { res.status(500).json({ message: error.message }); }
-};
-
-const updateExport = async (req, res) => {
-  try {
-    const { note, hide_price } = req.body;
-    const receipt = await ExportReceipt.findByIdAndUpdate(
-      req.params.id,
-      { $set: { note, hide_price } },
-      { new: true }
-    );
-    receipt ? res.json(receipt) : res.status(404).json({ message: 'Không tìm thấy phiếu' });
-  } catch (error) { res.status(500).json({ message: error.message }); }
 };
 
 const getNewExportCode = async (req, res) => {
@@ -177,7 +175,79 @@ const getNewExportCode = async (req, res) => {
     const counterId = `export_${dateStr}`;
     const counter = await Counter.findOneAndUpdate({ _id: counterId }, { $setOnInsert: { seq: 0 } }, { new: true, upsert: true });
     res.json({ code: `XK-${dateStr}-${String(counter.seq + 1).padStart(3, '0')}` });
-  } catch (error) { res.status(500).json({ message: "Lỗi sinh mã: " + error.message }); }
+  } catch (error) { res.status(500).json({ message: "Lỗi sinh mã" }); }
+};
+
+// --- HÀM LẤY DANH SÁCH (CÓ PHÂN TRANG SERVER-SIDE) ---
+const getExports = async (req, res) => {
+  try {
+    const isPaginated = req.query.page !== undefined;
+
+    if (!isPaginated) {
+      const exportsList = await ExportReceipt.find({}).populate('customer_id', 'name phone address saved_points').sort({ createdAt: -1 });
+      return res.json(exportsList);
+    }
+
+    const page = parseInt(req.query.page) || 1;
+    let limit = 10;
+    if (req.query.limit === 'all') {
+        limit = 0; 
+    } else if (req.query.limit) {
+        limit = parseInt(req.query.limit) || 10;
+    }
+
+    const search = req.query.search || '';
+    const sortKey = req.query.sortKey || 'createdAt';
+    const sortDir = req.query.sortDir === 'asc' ? 1 : -1;
+
+    let query = {};
+
+    if (search) {
+      // Tìm Khách hàng khớp từ khóa trước
+      const matchingCustomers = await Partner.find({
+          name: { $regex: search, $options: 'i' },
+          type: 'customer'
+      }).select('_id');
+      const customerIds = matchingCustomers.map(c => c._id);
+
+      query.$or = [
+        { code: { $regex: search, $options: 'i' } },
+        { note: { $regex: search, $options: 'i' } },
+        { customer_id: { $in: customerIds } },
+        { "details.product_name_backup": { $regex: search, $options: 'i' } },
+        { "details.sku": { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    let sortObj = {};
+    if (sortKey) {
+        if (sortKey === 'customer_id' || sortKey === 'customer') {
+             sortObj['createdAt'] = sortDir;
+        } else {
+             sortObj[sortKey] = sortDir;
+        }
+    }
+
+    const totalItems = await ExportReceipt.countDocuments(query);
+    const totalPages = limit > 0 ? Math.ceil(totalItems / limit) : 1;
+
+    const exportsList = await ExportReceipt.find(query)
+      .populate('customer_id', 'name phone address saved_points is_wholesale brand_discounts hide_price')
+      .sort(sortObj)
+      .skip(limit > 0 ? (page - 1) * limit : 0)
+      .limit(limit > 0 ? limit : 0);
+
+    res.json({
+      data: exportsList,
+      pagination: {
+        currentPage: page,
+        totalPages: totalPages || 1,
+        totalItems: totalItems,
+        itemsPerPage: limit
+      }
+    });
+
+  } catch (error) { res.status(500).json({ message: error.message }); }
 };
 
 export { createExport, getExports, updateExport, deleteExport, getNewExportCode };

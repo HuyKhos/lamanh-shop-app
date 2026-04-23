@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom'; 
 import { 
   Plus, Search, X, User, FileText, 
@@ -17,7 +17,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 const ExportPage = () => {
   const { isExpanded, setIsExpanded } = useOutletContext();
-  const { globalCache, refreshFlags, updateCache, triggerRefresh } = useOutletContext();
+  const { refreshFlags, updateCache, triggerRefresh } = useOutletContext();
   const searchInputRef = useRef(null); 
   const listRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -27,16 +27,20 @@ const ExportPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
 
+  // --- STATE DỮ LIỆU ---
   const [customers, setCustomers] = useState([]); 
   const [products, setProducts] = useState([]);    
+  const [exports, setExports] = useState([]); 
+  const [loading, setLoading] = useState(true); 
+
+  // --- STATE TÌM KIẾM & PHÂN TRANG ---
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'default' });
-  const [exports, setExports] = useState(globalCache.exports || []); 
-  const [loading, setLoading] = useState(!globalCache.exports); 
+  const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' });
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10); 
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
-  // --- TRẠNG THÁI MẶC ĐỊNH ---
   const INITIAL_EXPORT_STATE = {
     code: '', 
     customer_id: '',
@@ -53,7 +57,6 @@ const ExportPage = () => {
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [isSearchFocus, setIsSearchFocus] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
-  // --- STATE IDEMPOTENCY (CHỐNG TRÙNG LẶP) ---
   const [idempotencyKey, setIdempotencyKey] = useState(uuidv4());
   
   useEffect(() => {
@@ -62,7 +65,6 @@ const ExportPage = () => {
     }
   }, [showModal, isViewMode]);
 
-  // Utils
   const formatCurrency = (amount) => {
       if (amount === undefined || amount === null) return '0';
       return Number(amount).toLocaleString('vi-VN', { maximumFractionDigits: 0 });
@@ -134,14 +136,78 @@ const ExportPage = () => {
 
   const customerOptions = customers.map(c => ({ value: c._id, label: c.name }));
 
-  useEffect(() => {
-    const loadData = async () => { if (!globalCache.exports || refreshFlags.exports) { try { setLoading(true); const res = await axiosClient.get('/exports'); setExports(res); updateCache('exports', res); } catch (error) { console.error(error); } finally { setLoading(false); } } };
-    loadData();
-  }, [refreshFlags.exports]);
+  // --- FETCH DỮ LIỆU ĐỘC LẬP TỪNG PHẦN ---
+  const fetchExports = useCallback(async () => {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams({
+        page: currentPage,
+        limit: itemsPerPage,
+        search: searchTerm,
+        sortKey: sortConfig.key || 'createdAt',
+        sortDir: sortConfig.direction === 'asc' ? 'asc' : 'desc'
+      });
 
-  const fetchData = async () => { try { setLoading(true); const [exportRes, customerRes, productRes] = await Promise.all([axiosClient.get('/exports'), axiosClient.get('/partners?type=customer'), axiosClient.get('/products')]); setExports(exportRes); updateCache('exports', exportRes); setCustomers(customerRes); setProducts(productRes); } catch (error) { toast.error('Lỗi tải dữ liệu'); } finally { setLoading(false); } };
-  useEffect(() => { fetchData(); }, []);
-  useEffect(() => { setCurrentPage(1); }, [searchTerm, sortConfig]);
+      const res = await axiosClient.get(`/exports?${params.toString()}`);
+      if (res && res.pagination) {
+          setExports(res.data);
+          setTotalItems(res.pagination.totalItems);
+          setTotalPages(res.pagination.totalPages);
+      } else if (Array.isArray(res)) {
+          setExports(res);
+          setTotalItems(res.length);
+          setTotalPages(1);
+      } else {
+          setExports([]);
+      }
+    } catch (error) {
+      toast.error('Lỗi tải danh sách phiếu xuất');
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  }, [currentPage, itemsPerPage, searchTerm, sortConfig]);
+
+  useEffect(() => {
+    const fetchFormDependencies = async () => {
+      try {
+        const [customerRes, productRes] = await Promise.all([
+          axiosClient.get('/partners?type=customer'), 
+          axiosClient.get('/products')           
+        ]);
+        setCustomers(customerRes);
+        setProducts(productRes);
+      } catch (error) { console.error("Lỗi tải dependency cho form:", error); }
+    };
+    fetchFormDependencies();
+  }, []);
+
+  useEffect(() => {
+    fetchExports();
+  }, [currentPage, itemsPerPage, sortConfig, refreshFlags.exports]);
+
+  // Debounce Tìm kiếm
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      setCurrentPage(1); 
+      fetchExports();
+    }, 500);
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchTerm]);
+
+  const handleSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
+    setSortConfig({ key, direction });
+    setCurrentPage(1);
+  };
+
+  const renderSortIcon = (key) => {
+    if (sortConfig.key !== key) return <ArrowUpDown size={14} className="text-gray-400 ml-1" />;
+    return sortConfig.direction === 'asc' ? <ArrowUp size={14} className="text-blue-600 ml-1" /> : <ArrowDown size={14} className="text-blue-600 ml-1" />;
+  };
+
+  const paginate = (pageNumber) => { if (pageNumber > 0 && pageNumber <= totalPages) setCurrentPage(pageNumber); };
 
   // --- IN ẤN & XUẤT ẢNH ---
   const generateInvoiceHTML = (item, hidePrice, isImageExport = false) => {
@@ -178,7 +244,6 @@ const ExportPage = () => {
   const checkExportAction = (e, item, type) => { e.stopPropagation(); if (type === 'excel' || type === 'image') { performExport(item, type, false); return; } const customerId = item.customer_id?._id; const foundCustomer = customers.find(c => c._id === customerId); const customerHideSetting = foundCustomer ? foundCustomer.hide_price : false; performExport(item, type, customerHideSetting); };
   const performExport = (item, type, hidePrice) => { if (type === 'excel') { exportExcel(item, false); } else if (type === 'print') { printTransactionWindow(item, hidePrice); } else if (type === 'image') { exportImage(item, hidePrice); } };
   const exportExcel = (item, hidePrice) => {
-    // 1. Chuẩn bị dữ liệu
     const customerName = item.customer_id?.name || 'Khách lẻ';
     const customerPhone = item.customer_id?.phone || '';
     const customerAddress = item.customer_id?.address || '';
@@ -186,7 +251,6 @@ const ExportPage = () => {
     const createdDate = new Date(item.date);
     const dateStr = `Ngày ${createdDate.getDate()} tháng ${createdDate.getMonth() + 1} năm ${createdDate.getFullYear()}`;
     
-    // Tính toán
     const totalQty = item.details.reduce((s, i) => s + i.quantity, 0);
     const totalRawPrice = item.details.reduce((s, i) => s + (i.quantity * i.export_price), 0);
     const totalPoints = item.details.reduce((s, i) => s + (i.quantity * (i.gift_points || 0)), 0);
@@ -195,8 +259,6 @@ const ExportPage = () => {
                       : (item.customer_id?.saved_points || 0) - totalPoints;
 
     const styleBorder = { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } };
-    const styleCenter = { alignment: { horizontal: "center", vertical: "center" } };
-    const styleBold = { font: { bold: true } };
     const styleHeaderTable = { font: { bold: true }, alignment: { horizontal: "center", vertical: "center", wrapText: true }, border: styleBorder, fill: { fgColor: { rgb: "EFEFEF" } } };
     const styleCellBorder = { border: styleBorder };
 
@@ -291,16 +353,6 @@ const ExportPage = () => {
     XLSX.writeFile(wb, `Phieu_${item.code}.xlsx`);
   };
 
-  const getProcessedExports = () => { let result = [...exports]; if (searchTerm) { const lowerTerm = searchTerm.toLowerCase().trim(); result = result.filter(item => { const matchCode = item.code?.toLowerCase().includes(lowerTerm); const matchCustomer = item.customer_id?.name?.toLowerCase().includes(lowerTerm); const matchNote = item.note?.toLowerCase().includes(lowerTerm); const dateStr = new Date(item.date).toLocaleDateString('vi-VN'); const matchDate = dateStr.includes(lowerTerm); const matchProduct = item.details?.some(d => d.product_name_backup?.toLowerCase().includes(lowerTerm) || d.sku?.toLowerCase().includes(lowerTerm)); return matchCode || matchCustomer || matchNote || matchDate || matchProduct; }); } return result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)); };
-  const processedExports = getProcessedExports();
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentItems = processedExports.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(processedExports.length / itemsPerPage);
-  const paginate = (pageNumber) => { if (pageNumber > 0 && pageNumber <= totalPages) setCurrentPage(pageNumber); };
-  const handleSort = (key) => { let direction = 'asc'; if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc'; setSortConfig({ key, direction }); };
-  const renderSortIcon = (key) => { if (sortConfig.key !== key) return <ArrowUpDown size={14} className="text-gray-400 ml-1" />; return sortConfig.direction === 'asc' ? <ArrowUp size={14} className="text-blue-600 ml-1" /> : <ArrowDown size={14} className="text-blue-600 ml-1" />; };
-
   const handleSaveExport = async () => {
     if (!newExport.customer_id) return toast.warning('Chọn Khách hàng');
     if (newExport.details.length === 0) return toast.warning('Chưa có sản phẩm');
@@ -327,7 +379,7 @@ const ExportPage = () => {
         setIdempotencyKey(uuidv4()); 
 
         handleCloseModal();
-        fetchData();
+        fetchExports();
     } catch (error) { 
         toast.error('Lỗi: ' + (error.response?.data?.message || error.message));
     } finally { 
@@ -335,17 +387,35 @@ const ExportPage = () => {
     }
   };
 
-  const handleUpdateNote = async () => { try { await axiosClient.put(`/exports/${newExport._id}`, { note: newExport.note, hide_price: newExport.hide_price }); fetchData(); } catch (error) { toast.error('Lỗi cập nhật: ' + error.message); } };
-  const handleDeleteExport = async (e, id, code) => { e.stopPropagation(); if (window.confirm(`Xóa phiếu ${code}?`)) { try { await axiosClient.delete(`/exports/${id}`); toast.success('Đã xóa'); triggerRefresh(['exports', 'products', 'debts', 'dashboard', 'partners']); fetchData(); } catch (error) { toast.error('Lỗi xóa: ' + error.message); } } };
+  const handleUpdateNote = async () => { try { await axiosClient.put(`/exports/${newExport._id}`, { note: newExport.note, hide_price: newExport.hide_price }); fetchExports(); } catch (error) { toast.error('Lỗi cập nhật: ' + error.message); } };
+  
+  const handleDeleteExport = async (e, id, code) => { 
+    e.stopPropagation(); 
+    if (window.confirm(`Xóa phiếu ${code}?`)) { 
+      try { 
+        await axiosClient.delete(`/exports/${id}`); 
+        toast.success('Đã xóa'); 
+        triggerRefresh(['exports', 'products', 'debts', 'dashboard', 'partners']); 
+        
+        if (exports.length === 1 && currentPage > 1) {
+            setCurrentPage(currentPage - 1);
+        } else {
+            fetchExports();
+        }
+      } catch (error) { 
+        toast.error('Lỗi xóa: ' + error.message); 
+      } 
+    } 
+  };
+  
   const handleRowClick = (item) => { setNewExport({ _id: item._id, code: item.code, customer_id: item.customer_id?._id || '', note: item.note || '', payment_due_date: toInputDate(item.payment_due_date), hide_price: item.hide_price || false, details: item.details || [], date: item.date, total_amount: item.total_amount, partner_points_snapshot: item.partner_points_snapshot }); const oldCustomer = customers.find(c => c._id === (item.customer_id?._id || item.customer_id)); setSelectedCustomerInfo(oldCustomer); setIsViewMode(true); setShowModal(true); };
   
-  // --- THAY ĐỔI 1: Khi đổi khách hàng, truyền object Khách hàng vào hàm tính lại giá ---
   const handleCustomerChange = (customerId) => { 
       const customer = customers.find(c => c._id === customerId); 
       if (customer) { 
           setSelectedCustomerInfo(customer); 
           setNewExport(prev => ({ ...prev, customer_id: customerId, hide_price: customer.hide_price || false, apply_wholesale: customer.is_wholesale || false })); 
-          recalculatePrices(customer); // <-- Truyền toàn bộ object customer vào
+          recalculatePrices(customer); 
       } else { 
           setSelectedCustomerInfo(null); 
           setNewExport(prev => ({ ...prev, customer_id: '', apply_wholesale: false })); 
@@ -353,7 +423,6 @@ const ExportPage = () => {
       } 
   };
   
-  // --- THAY ĐỔI 2: Logic tính lại giá thông minh ---
   const recalculatePrices = (customer) => { 
     setNewExport(prev => { 
         const newDetails = prev.details.map(item => { 
@@ -362,14 +431,12 @@ const ExportPage = () => {
             
             const originalPrice = product.export_price || 0;
             
-            // LOGIC LẤY CHIẾT KHẤU TỰ ĐỘNG
             let newDiscount = 0;
-            // 1. Tìm xem khách có cấu hình nhãn hàng này không
             const brandConfig = customer?.brand_discounts?.find(d => d.brand === product.brand);
             if (brandConfig) {
-                newDiscount = brandConfig.discount_percent; // Lấy theo Nhãn hàng
+                newDiscount = brandConfig.discount_percent; 
             } else if (customer?.is_wholesale) {
-                newDiscount = product.discount_percent || 0; // Lấy theo Sỉ mặc định
+                newDiscount = product.discount_percent || 0; 
             }
             
             return { 
@@ -391,7 +458,6 @@ const ExportPage = () => {
     XLSX.writeFile(wb, "Mau_Xuat_Kho.xlsx");
   };
 
-  // --- THAY ĐỔI 3: Cập nhật logic Excel ---
   const handleImportExcel = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -427,7 +493,6 @@ const ExportPage = () => {
 
             const originalPrice = product.export_price || 0;
 
-            // LOGIC TỰ ĐỘNG LẤY CHIẾT KHẤU TỪ EXCEL
             let autoDiscount = 0;
             const brandConfig = selectedCustomerInfo?.brand_discounts?.find(d => d.brand === product.brand);
             if (brandConfig) {
@@ -483,19 +548,17 @@ const ExportPage = () => {
     }
   };
 
-  // --- THAY ĐỔI 4: Thêm sản phẩm trực tiếp từ ô search ---
   const addProductToExport = (product) => { 
     if (product.current_stock <= 0) { return toast.error(`Sản phẩm ${product.name} đã hết hàng!`); } 
     
     const originalPrice = product.export_price || 0; 
     
-    // LOGIC TỰ ĐỘNG ĐIỀN CHIẾT KHẤU KHI CHỌN TỪ SEARCH
     let autoDiscount = 0;
     const brandConfig = selectedCustomerInfo?.brand_discounts?.find(d => d.brand === product.brand);
     if (brandConfig) {
-        autoDiscount = brandConfig.discount_percent; // Khách có cấu hình NHÃN HÀNG này
+        autoDiscount = brandConfig.discount_percent; 
     } else if (newExport.apply_wholesale) {
-        autoDiscount = product.discount_percent || 0; // Khách không có, nhưng là khách SỈ
+        autoDiscount = product.discount_percent || 0; 
     }
 
     const newItem = { 
@@ -590,11 +653,14 @@ const ExportPage = () => {
     if (isSearchFocus && productSearch.trim() === '') {
       results = products;
     } else {
-      const lower = productSearch.toLowerCase();
-      results = products.filter(p => 
-        p.name.toLowerCase().includes(lower) || 
-        (p.sku && p.sku.toLowerCase().includes(lower))
-      );
+      const searchKeywords = productSearch.toLowerCase().split(/\s+/).filter(word => word.length > 0);
+      results = products.filter(p => {
+        const productName = p.name.toLowerCase();
+        const productSku = (p.sku || '').toLowerCase();
+        return searchKeywords.every(keyword => 
+            productName.includes(keyword) || productSku.includes(keyword)
+        );
+      });
     }
     
     setFilteredProducts(results);
@@ -657,7 +723,14 @@ const handleKeyDown = (e) => {
       </div>
 
       {/* TABLE */}
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden print:hidden">
+      <div className="bg-white rounded-xl shadow-sm border overflow-hidden relative min-h-[400px] print:hidden">
+        
+        {loading && (
+             <div className="absolute inset-0 bg-white bg-opacity-60 z-10 flex items-center justify-center">
+                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+             </div>
+        )}
+
         <div className="overflow-x-auto">
             <table className="w-full text-left">
             <thead className="bg-blue-50 text-gray-600 font-semibold text-sm border-b">
@@ -671,69 +744,74 @@ const handleKeyDown = (e) => {
                 </tr>
             </thead>
             <tbody className="divide-y">
-                {currentItems.map((item) => (
-                <tr key={item._id} className="hover:bg-gray-100 cursor-pointer" onClick={() => handleRowClick(item)}>
-                    <td className="p-4 font-bold text-blue-600 font-mono">{item.code}</td>
-                    <td className="p-4 text-gray-800">{new Date(item.date).toLocaleDateString('vi-VN')}</td>
-                    <td className="p-4 font-medium text-gray-800">{item.customer_id?.name} {item.hide_price && <span className="ml-2 text-[10px] bg-yellow-100 text-yellow-700 px-1 py-0.5 rounded border border-yellow-200">Ẩn giá</span>}</td>
-                    <td className="p-4 text-right font-bold text-gray-800">
-                      <div>{formatCurrency(item.total_amount)}₫</div>
-                      
-                      {(() => {
-                          if (item.total_amount === 0) {
-                            return <div className="text-xs text-gray-400 mt-1 italic font-normal">---</div>;
-                          }
-                          let profit = item.details.reduce((sum, d) => sum + (d.profit || 0), 0);
+                {!loading && exports.length === 0 ? (
+                    <tr><td colSpan="6" className="p-8 text-center text-gray-500">Chưa có phiếu xuất nào.</td></tr>
+                ) : (
+                    exports.map((item) => (
+                    <tr key={item._id} className="hover:bg-gray-100 cursor-pointer" onClick={() => handleRowClick(item)}>
+                        <td className="p-4 font-bold text-blue-600 font-mono">{item.code}</td>
+                        <td className="p-4 text-gray-800">{new Date(item.date).toLocaleDateString('vi-VN')}</td>
+                        <td className="p-4 font-medium text-gray-800">{item.customer_id?.name} {item.hide_price && <span className="ml-2 text-[10px] bg-yellow-100 text-yellow-700 px-1 py-0.5 rounded border border-yellow-200">Ẩn giá</span>}</td>
+                        <td className="p-4 text-right font-bold text-gray-800">
+                        <div>{formatCurrency(item.total_amount)}₫</div>
+                        
+                        {(() => {
+                            if (item.total_amount === 0) {
+                                return <div className="text-xs text-gray-400 mt-1 italic font-normal">---</div>;
+                            }
+                            let profit = item.details.reduce((sum, d) => sum + (d.profit || 0), 0);
 
-                          const hasStoredProfit = item.details.some(d => d.profit !== undefined);
-                          
-                          if (!hasStoredProfit) {
-                              const totalCost = item.details.reduce((sum, d) => {
-                                    let unitCost = d.import_price;
-                                    if (unitCost === undefined || unitCost === null) {
-                                        const currentProduct = products.find(p => p._id === d.product_id);
-                                        unitCost = currentProduct ? currentProduct.import_price : 0;
-                                    }
-                                    return sum + (Number(unitCost || 0) * d.quantity);
-                              }, 0);
-                              profit = item.total_amount - totalCost;
-                          }
+                            const hasStoredProfit = item.details.some(d => d.profit !== undefined);
+                            
+                            if (!hasStoredProfit) {
+                                const totalCost = item.details.reduce((sum, d) => {
+                                        let unitCost = d.import_price;
+                                        if (unitCost === undefined || unitCost === null) {
+                                            const currentProduct = products.find(p => p._id === d.product_id);
+                                            unitCost = currentProduct ? currentProduct.import_price : 0;
+                                        }
+                                        return sum + (Number(unitCost || 0) * d.quantity);
+                                }, 0);
+                                profit = item.total_amount - totalCost;
+                            }
 
-                          return (
-                              <div className={`text-xs font-medium mt-1 ${profit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                                {hasStoredProfit ? 'Lãi: ' : 'Lãi (ước tính): '}
-                                {formatCurrency(profit)}₫
-                              </div>
-                          );
-                      })()}
-                  </td>
-                    <td className="p-4 text-gray-500 italic text-sm max-w-[200px] truncate" title={item.note}>{item.note || ''}</td>
-                    <td className="p-4 text-center flex justify-center gap-1">
-                    <button onClick={(e) => checkExportAction(e, item, 'print')} className="p-2 text-gray-600 hover:bg-gray-200 rounded" title="In phiếu"><Printer size={18} /></button>
-                    <button onClick={(e) => checkExportAction(e, item, 'excel')} className="p-2 text-green-600 hover:bg-green-100 rounded" title="Excel"><FileSpreadsheet size={18} /></button>
-                    <button onClick={(e) => checkExportAction(e, item, 'image')} className="p-2 text-purple-600 hover:bg-purple-100 rounded" title="Lưu ảnh"><ImageIcon size={18} /></button>
-                    <div className="w-px h-4 bg-gray-300 mx-1 self-center"></div>
-                    <button onClick={(e) => handleDeleteExport(e, item._id, item.code)} className="p-2 text-red-400 hover:bg-red-50 rounded" title="Xóa"><Trash2 size={18} /></button>
+                            return (
+                                <div className={`text-xs font-medium mt-1 ${profit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                    {hasStoredProfit ? 'Lãi: ' : 'Lãi (ước tính): '}
+                                    {formatCurrency(profit)}₫
+                                </div>
+                            );
+                        })()}
                     </td>
-                </tr>
-                ))}
+                        <td className="p-4 text-gray-500 italic text-sm max-w-[200px] truncate" title={item.note}>{item.note || ''}</td>
+                        <td className="p-4 text-center flex justify-center gap-1">
+                        <button onClick={(e) => checkExportAction(e, item, 'print')} className="p-2 text-gray-600 hover:bg-gray-200 rounded" title="In phiếu"><Printer size={18} /></button>
+                        <button onClick={(e) => checkExportAction(e, item, 'excel')} className="p-2 text-green-600 hover:bg-green-100 rounded" title="Excel"><FileSpreadsheet size={18} /></button>
+                        <button onClick={(e) => checkExportAction(e, item, 'image')} className="p-2 text-purple-600 hover:bg-purple-100 rounded" title="Lưu ảnh"><ImageIcon size={18} /></button>
+                        <div className="w-px h-4 bg-gray-300 mx-1 self-center"></div>
+                        <button onClick={(e) => handleDeleteExport(e, item._id, item.code)} className="p-2 text-red-400 hover:bg-red-50 rounded" title="Xóa"><Trash2 size={18} /></button>
+                        </td>
+                    </tr>
+                    ))
+                )}
             </tbody>
             </table>
         </div>
 
-        {processedExports.length > 0 && (
+        {/* --- THANH PHÂN TRANG UI (CẬP NHẬT SERVER STATE) --- */}
+        {totalItems > 0 && (
             <div className="flex items-center justify-between px-4 py-3 border-t">
               <div className="text-sm text-gray-500">
-                Hiển thị {indexOfFirstItem + 1}-{Math.min(indexOfLastItem, processedExports.length)} trong số {processedExports.length} phiếu
+                Hiển thị {((currentPage - 1) * itemsPerPage) + 1}-{Math.min(currentPage * itemsPerPage, totalItems)} trong số {totalItems} phiếu
               </div>
               
               <div className="flex items-center gap-2">
-                <select className="border border-gray-300 rounded-md text-sm px-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none" value={itemsPerPage} onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}>
+                <select className="border border-gray-300 rounded-md text-sm px-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer bg-white" value={itemsPerPage} onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}>
                   <option value="10">10 dòng</option><option value="20">20 dòng</option><option value="50">50 dòng</option><option value="100">100 dòng</option>
                 </select>
-                <button onClick={() => paginate(currentPage - 1)} disabled={currentPage === 1} className={`p-1 rounded-md border ${currentPage === 1 ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50'}`}><ChevronLeft size={20} /></button>
-                <div className="flex gap-1">{Array.from({ length: Math.min(5, totalPages) }, (_, i) => { let pageNum = i + 1; if (totalPages > 5) { if (currentPage > 3) pageNum = currentPage - 2 + i; if (pageNum > totalPages) pageNum = totalPages - 4 + i; } return (<button key={pageNum} onClick={() => paginate(pageNum)} className={`w-8 h-8 flex items-center justify-center rounded-md text-sm font-medium transition-colors ${ currentPage === pageNum ? 'bg-blue-600 text-white shadow-sm' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50' }`}>{pageNum}</button>) })}</div>
-                <button onClick={() => paginate(currentPage + 1)} disabled={currentPage === totalPages} className={`p-1 rounded-md border ${currentPage === totalPages ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50'}`}><ChevronRight size={20} /></button>
+                <button onClick={() => paginate(currentPage - 1)} disabled={currentPage === 1} className={`p-1 rounded-md border ${currentPage === 1 ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50 cursor-pointer'}`}><ChevronLeft size={20} /></button>
+                <div className="flex gap-1">{Array.from({ length: Math.min(5, totalPages) }, (_, i) => { let pageNum = i + 1; if (totalPages > 5) { if (currentPage > 3) pageNum = currentPage - 2 + i; if (pageNum > totalPages) pageNum = totalPages - 4 + i; } return (<button key={pageNum} onClick={() => paginate(pageNum)} className={`w-8 h-8 flex items-center justify-center rounded-md text-sm font-medium transition-colors ${ currentPage === pageNum ? 'bg-blue-600 text-white shadow-sm cursor-default' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 cursor-pointer' }`}>{pageNum}</button>) })}</div>
+                <button onClick={() => paginate(currentPage + 1)} disabled={currentPage === totalPages} className={`p-1 rounded-md border ${currentPage === totalPages ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50 cursor-pointer'}`}><ChevronRight size={20} /></button>
               </div>
             </div>
         )}
@@ -872,10 +950,8 @@ const handleKeyDown = (e) => {
               </div>
             </div>
             
-            {/* --- FOOTER MODAL ĐÃ SỬA: CĂN PHẢI TOÀN BỘ --- */}
             <div className="p-5 border-t bg-white flex justify-end items-center rounded-b-xl shrink-0 gap-6">
               
-              {/* 1. TỔNG TIỀN */}
               <div className="text-gray-600 font-medium flex items-center gap-2">
                   <DollarSign className="text-blue-600" /> 
                   Tổng tiền: 
@@ -887,7 +963,6 @@ const handleKeyDown = (e) => {
               <div className="text-gray-600 font-medium flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
                   <Gift className="text-purple-600" size={20} />
                   
-                  {/* LOGIC HIỂN THỊ ĐIỂM */}
                   {(() => {
                       const totalPoints = calculateTotalPoints();
                       let startPoints = 0;
@@ -929,7 +1004,6 @@ const handleKeyDown = (e) => {
                   })()}
               </div>
 
-              {/* 3. NÚT BẤM */}
               <div className="flex gap-3">
                 <button 
                   onClick={() => {
