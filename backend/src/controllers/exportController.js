@@ -21,7 +21,7 @@ export const generateExportCode = async () => {
 };
 
 // --- 2. TẠO PHIẾU XUẤT (Đã bỏ Công nợ) ---
-export const createExport = async (req, res) => {
+const createExport = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
