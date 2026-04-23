@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import axiosClient from '../api/axiosClient';
 import { toast } from 'react-toastify';
+import CreatableSelect from 'react-select/creatable';
 
 const PartnerPage = () => {
   const { isExpanded, setIsExpanded } = useOutletContext();
@@ -327,15 +328,20 @@ const PartnerPage = () => {
                             formData.brand_discounts.map((discount, index) => (
                               <div key={index} className="flex gap-2 items-center bg-white p-2 rounded-lg border border-blue-200 shadow-sm">
                                 <div className="flex-1">
-                                  <input 
-                                    type="text" 
-                                    list="partner-brand-suggestions"
-                                    placeholder="Tên Nhãn (VD: Mămmy)" 
-                                    className="w-full border border-gray-300 rounded p-1.5 text-sm outline-none focus:ring-1 focus:ring-blue-500 bg-white" 
-                                    value={discount.brand} 
-                                    onChange={(e) => handleUpdateBrandDiscount(index, 'brand', e.target.value)} 
-                                    autoComplete="off"
-                                    required 
+                                  <CreatableSelect
+                                    isClearable
+                                    options={Array.from(new Set([
+                                        ...(globalCache.products?.map(p => p.brand) || []),
+                                        ...(partners || []).flatMap(p => p.brand_discounts?.map(d => d.brand) || [])
+                                    ].filter(Boolean))).map(b => ({ value: b, label: b }))}
+                                    value={discount.brand ? { label: discount.brand, value: discount.brand } : null}
+                                    onChange={(selected) => handleUpdateBrandDiscount(index, 'brand', selected ? selected.value : '')}
+                                    placeholder="Chọn nhãn hàng..."
+                                    formatCreateLabel={(inputValue) => `Tạo mới: "${inputValue}"`}
+                                    styles={{
+                                      control: (base) => ({ ...base, borderRadius: '0.375rem', borderColor: '#d1d5db', minHeight: '38px', fontSize: '14px' }),
+                                      menu: (base) => ({ ...base, zIndex: 9999 })
+                                    }}
                                   />
                                 </div>
                                 <div className="w-20 relative">

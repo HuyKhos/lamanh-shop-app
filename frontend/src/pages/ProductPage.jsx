@@ -10,6 +10,7 @@ import axiosClient from '../api/axiosClient';
 import { toast } from 'react-toastify';
 import * as XLSX from 'xlsx'; 
 import html2canvas from 'html2canvas'; 
+import CreatableSelect from 'react-select/creatable';
 
 const ProductPage = () => {
   const { refreshFlags, updateCache } = useOutletContext();
@@ -534,18 +535,23 @@ const ProductPage = () => {
               </div>
               
               <div className="grid grid-cols-3 gap-6 mb-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1"><Tag size={16} className="text-gray-500" /> Nhãn hàng</label>
-                    <input 
-                      type="text" 
-                      list="brand-suggestions" 
-                      className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 outline-none bg-white" 
-                      placeholder="Chọn hoặc nhập mới..." 
-                      value={formData.brand} 
-                      onChange={(e) => setFormData({...formData, brand: e.target.value})} 
-                      autoComplete="off"
-                    />
-                  </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                  <Tag size={16} className="text-gray-500" /> Nhãn hàng
+                </label>
+                <CreatableSelect
+                  isClearable
+                  options={Array.from(new Set(products.map(p => p.brand).filter(Boolean))).map(b => ({ value: b, label: b }))}
+                  value={formData.brand ? { label: formData.brand, value: formData.brand } : null}
+                  onChange={(selected) => setFormData({ ...formData, brand: selected ? selected.value : '' })}
+                  placeholder="Chọn hoặc nhập mới..."
+                  formatCreateLabel={(inputValue) => `Tạo nhãn hàng mới: "${inputValue}"`}
+                  styles={{
+                    control: (base) => ({ ...base, borderRadius: '0.5rem', borderColor: '#d1d5db', minHeight: '42px', fontSize: '14px' }),
+                    menu: (base) => ({ ...base, zIndex: 9999 })
+                  }}
+                />
+              </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Đơn vị tính</label>
                     <input type="text" className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 outline-none" value={formData.unit} onChange={(e) => setFormData({...formData, unit: e.target.value})} />
