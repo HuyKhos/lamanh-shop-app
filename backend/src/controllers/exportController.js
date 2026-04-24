@@ -40,10 +40,23 @@ const createExport = async (req, res) => {
       const product = await Product.findById(item.product_id).session(session);
       if (!product) throw new Error(`Sản phẩm ID ${item.product_id} không tồn tại.`);
 
-      // Logic Chiết khấu nhãn hàng
+      // 1. Lấy chiết khấu cấu hình riêng cho Khách hàng (Trong PartnerPage)
       const brandConfig = customer.brand_discounts?.find(d => d.brand === product.brand);
-      const discountPercent = brandConfig ? brandConfig.discount_percent : (customer.is_wholesale ? (product.discount_percent || 0) : 0);
-      
+      const partnerDiscount = brandConfig ? brandConfig.discount_percent : 0;
+
+      // 2. Lấy chiết khấu Khuyến mãi của Sản phẩm (Hòa giá 5+1...)
+      const promoDiscount = product.discount_percent || 0;
+
+      // 3. TÍNH CHIẾT KHẤU LŨY TIẾN (C_tong = C1 + C2 - C1*C2)
+      // Chuyển % thành số thập phân để tính toán
+      const c1 = partnerDiscount / 100;
+      const c2 = promoDiscount / 100;
+      const totalDiscountDecimal = c1 + c2 - (c1 * c2);
+
+      // Chuyển lại thành % (Làm tròn 2 chữ số thập phân cho đẹp: VD 26.67)
+      const discountPercent = Math.floor(totalDiscountDecimal * 10000) / 100;
+      // ----------------------------------------------------
+
       const basePrice = item.export_price || product.export_price;
       const appliedPrice = basePrice * (1 - discountPercent / 100);
       const lineTotal = Math.round(appliedPrice * item.quantity);

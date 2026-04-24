@@ -431,19 +431,24 @@ const ExportPage = () => {
             
             const originalPrice = product.export_price || 0;
             
-            let newDiscount = 0;
-            const brandConfig = customer?.brand_discounts?.find(d => d.brand === product.brand);
-            if (brandConfig) {
-                newDiscount = brandConfig.discount_percent; 
-            } else if (customer?.is_wholesale) {
-                newDiscount = product.discount_percent || 0; 
-            }
+            const brandConfig = customer?.brand_discounts?.find(d => d.brand === product.brand) || 
+            selectedCustomerInfo?.brand_discounts?.find(d => d.brand === product.brand);
+            const partnerDiscount = brandConfig ? brandConfig.discount_percent : 0;
+            const promoDiscount = product.discount_percent || 0;
+
+            // Tính % Lũy tiến
+            const c1 = partnerDiscount / 100;
+            const c2 = promoDiscount / 100;
+            const totalDiscountDecimal = c1 + c2 - (c1 * c2);
+
+            // Làm tròn 2 chữ số (VD: 26.67)
+            const autoDiscount = Math.floor(totalDiscountDecimal * 10000) / 100;
             
             return { 
                 ...item, 
                 export_price: originalPrice, 
-                discount: newDiscount,       
-                total: calculateLineTotal(item.quantity, originalPrice, newDiscount) 
+                discount: totalDiscount,       
+                total: calculateLineTotal(item.quantity, originalPrice, totalDiscount) 
             }; 
         }); 
         return { ...prev, details: newDetails }; 
@@ -493,13 +498,18 @@ const ExportPage = () => {
 
             const originalPrice = product.export_price || 0;
 
-            let autoDiscount = 0;
-            const brandConfig = selectedCustomerInfo?.brand_discounts?.find(d => d.brand === product.brand);
-            if (brandConfig) {
-                autoDiscount = brandConfig.discount_percent;
-            } else if (newExport.apply_wholesale) {
-                autoDiscount = product.discount_percent || 0;
-            }
+            const brandConfig = selectedCustomerInfo?.brand_discounts.find(d => d.brand === product.brand) || 
+            selectedCustomerInfo?.brand_discounts?.find(d => d.brand === product.brand);
+            const partnerDiscount = brandConfig ? brandConfig.discount_percent : 0;
+            const promoDiscount = product.discount_percent || 0;
+
+            // Tính % Lũy tiến
+            const c1 = partnerDiscount / 100;
+            const c2 = promoDiscount / 100;
+            const totalDiscountDecimal = c1 + c2 - (c1 * c2);
+
+            // Làm tròn 2 chữ số (VD: 26.67)
+            const autoDiscount = Math.floor(totalDiscountDecimal * 10000) / 100;
 
             const finalQuantity = Math.min(quantity, product.current_stock);
             const qty = finalQuantity > 0 ? finalQuantity : 1;
@@ -553,13 +563,18 @@ const ExportPage = () => {
     
     const originalPrice = product.export_price || 0; 
     
-    let autoDiscount = 0;
-    const brandConfig = selectedCustomerInfo?.brand_discounts?.find(d => d.brand === product.brand);
-    if (brandConfig) {
-        autoDiscount = brandConfig.discount_percent; 
-    } else if (newExport.apply_wholesale) {
-        autoDiscount = product.discount_percent || 0; 
-    }
+    const brandConfig = selectedCustomerInfo?.brand_discounts.find(d => d.brand === product.brand) || 
+    selectedCustomerInfo?.brand_discounts?.find(d => d.brand === product.brand);
+    const partnerDiscount = brandConfig ? brandConfig.discount_percent : 0;
+    const promoDiscount = product.discount_percent || 0;
+
+    // Tính % Lũy tiến
+    const c1 = partnerDiscount / 100;
+    const c2 = promoDiscount / 100;
+    const totalDiscountDecimal = c1 + c2 - (c1 * c2);
+
+    // Làm tròn 2 chữ số (VD: 26.67)
+    const autoDiscount = Math.floor(totalDiscountDecimal * 10000) / 100;
 
     const newItem = { 
         product_id: product._id, 

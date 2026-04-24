@@ -124,20 +124,35 @@ const PartnerPage = () => {
       }
     }
 
+    // --- BỔ SUNG: ÉP KIỂU SỐ CHO MẢNG CHIẾT KHẤU TRƯỚC KHI GỬI ---
+    const formattedData = {
+      ...formData,
+      brand_discounts: formData.brand_discounts ? formData.brand_discounts.map(d => ({
+        ...d,
+        // Chuyển chuỗi "16.67" thành số thực 16.67. Nếu rỗng thì gán bằng 0
+        discount_percent: Number(d.discount_percent) || 0
+      })) : []
+    };
+    // -------------------------------------------------------------
+
     try {
       if (isEditMode && formData._id) {
-        await axiosClient.put(`/partners/${formData._id}`, formData);
+        // LƯU Ý: Gửi formattedData thay vì formData
+        await axiosClient.put(`/partners/${formData._id}`, formattedData);
         toast.success('Cập nhật thành công! ✏️');
         triggerRefresh(['exports', 'imports', 'dashboard', 'partners']); 
       } else {
-        await axiosClient.post('/partners', formData);
+        // LƯU Ý: Gửi formattedData thay vì formData
+        await axiosClient.post('/partners', formattedData);
         toast.success('Thêm đối tác thành công! 🎉');
         triggerRefresh(['exports', 'imports', 'partners']);
       }
       
       handleClose();
       fetchPartners(); // Gọi lại hàm fetch của trang hiện tại
-    } catch (error) { toast.error('Lỗi: ' + (error.response?.data?.message || error.message)); }
+    } catch (error) { 
+      toast.error('Lỗi: ' + (error.response?.data?.message || error.message)); 
+    }
   };
 
   const handleDeletePartner = async (e, id, name) => {
@@ -345,18 +360,31 @@ const PartnerPage = () => {
                                   />
                                 </div>
                                 <div className="w-20 relative">
-                                  <input 
-                                    type="number" 
-                                    placeholder="%" 
-                                    className="w-full border border-gray-300 rounded p-1.5 pr-6 text-sm outline-none focus:ring-1 focus:ring-blue-500 text-right" 
-                                    value={discount.discount_percent} 
-                                    onChange={(e) => handleUpdateBrandDiscount(index, 'discount_percent', Number(e.target.value))} 
-                                    onFocus={(e) => e.target.select()}
-                                    onWheel={(e) => e.target.blur()}
-                                    required 
-                                    min="0" 
-                                    max="100" 
-                                  />
+                                <input 
+                                  type="number" 
+                                  step="any" // QUAN TRỌNG: Cho phép nhập số lẻ (ví dụ: 16.67)
+                                  placeholder="%" 
+                                  className="w-full border border-gray-300 rounded p-1.5 pr-6 text-sm outline-none focus:ring-1 focus:ring-blue-500 text-right" 
+                                  value={discount.discount_percent} 
+                                  onChange={(e) => {
+                                    let val = e.target.value;
+                                    // Kiểm tra nếu có dấu phẩy/chấm và có nhiều hơn 2 số lẻ
+                                    if (val.includes('.')) {
+                                      const [integer, fraction] = val.split('.');
+                                      if (fraction.length > 2) {
+                                        // Cắt cụt, chỉ lấy 2 số sau dấu chấm
+                                        val = `${integer}.${fraction.slice(0, 2)}`;
+                                      }
+                                    }
+                                    // Cập nhật giá trị (giữ nguyên kiểu string để xử lý dấu chấm dễ hơn trong khi gõ)
+                                    handleUpdateBrandDiscount(index, 'discount_percent', val);
+                                  }} 
+                                  onFocus={(e) => e.target.select()}
+                                  onWheel={(e) => e.target.blur()}
+                                  required 
+                                  min="0" 
+                                  max="100" 
+                                />
                                   <span className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 text-xs">%</span>
                                 </div>
                                 <button type="button" onClick={() => handleRemoveBrandDiscount(index)} className="text-red-400 hover:text-red-600 p-1 hover:bg-red-50 rounded transition-colors" title="Xóa dòng này">
