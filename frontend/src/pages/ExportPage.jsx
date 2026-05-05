@@ -190,13 +190,17 @@ const ExportPage = () => {
     }
   }, [currentPage, itemsPerPage, searchTerm, sortConfig]);
 
-  // Thay thế useEffect cũ bằng đoạn này
+  // --- ĐOẠN 1: TẢI DANH SÁCH SẢN PHẨM & KHÁCH HÀNG (CẬP NHẬT TỒN KHO LIÊN TỤC) ---
   useEffect(() => {
     const fetchFormDependencies = async () => {
       try {
+        // Lấy thời gian hiện tại (tính bằng mili-giây) để tạo đường link độc nhất
+        const timestamp = new Date().getTime();
+        
         const [customerRes, productRes] = await Promise.all([
-          axiosClient.get('/partners?type=customer'), 
-          axiosClient.get('/products?limit=all') 
+          axiosClient.get(`/partners?type=customer&_t=${timestamp}`), 
+          // Thêm timestamp để trình duyệt bắt buộc phải chọc xuống Backend lấy tồn kho mới nhất
+          axiosClient.get(`/products?limit=all&_t=${timestamp}`) 
         ]);
         
         const extractArray = (res) => {
@@ -214,10 +218,14 @@ const ExportPage = () => {
         toast.error("Không thể tải danh sách sản phẩm/khách hàng");
       }
     };
-    fetchFormDependencies();
     
-  // THÊM refreshFlags.products VÀO ĐÂY ĐỂ LẤY LẠI KHO KHI CÓ ĐƠN HÀNG MỚI
-  }, [refreshFlags.products]);
+    // Tải lại tồn kho khi: Vừa vào trang, Mở Modal tạo phiếu, hoặc có lệnh refresh
+    if (showModal || refreshFlags.products !== undefined) {
+       fetchFormDependencies();
+    } else if (!showModal && products.length === 0) {
+       fetchFormDependencies();
+    }
+  }, [refreshFlags.products, showModal]);
 
   useEffect(() => {
     fetchExports();
