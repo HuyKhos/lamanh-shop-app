@@ -173,17 +173,25 @@ const ExportPage = () => {
       try {
         const [customerRes, productRes] = await Promise.all([
           axiosClient.get('/partners?type=customer'), 
-          axiosClient.get('/products?limit=all') // Đã thêm ?limit=all để lấy toàn bộ kho        
+          axiosClient.get('/products?limit=all') // Lấy toàn bộ kho để tìm kiếm      
         ]);
         
-        // Trích xuất đúng mảng dữ liệu (Array) từ kết quả trả về
-        const customersData = customerRes.data ? customerRes.data : customerRes;
-        const productsData = productRes.data ? productRes.data : productRes;
+        // --- HÀM TRÍCH XUẤT THÔNG MINH ---
+        // Hàm này quét dữ liệu trả về, tìm đúng Mảng (Array) để tránh lỗi .filter()
+        const extractArray = (res) => {
+          if (Array.isArray(res)) return res; // Trường hợp 1: Bản thân nó đã là Mảng
+          if (res?.data && Array.isArray(res.data)) return res.data; // Trường hợp 2: Bị bọc 1 lớp .data
+          if (res?.data?.data && Array.isArray(res.data.data)) return res.data.data; // Trường hợp 3: Bị bọc 2 lớp .data
+          return []; // Bảo vệ: Luôn trả về mảng rỗng nếu có lỗi, giúp web không bị trắng trang
+        };
 
-        setCustomers(customersData);
-        setProducts(productsData);
+        // Gán mảng dữ liệu sạch vào State
+        setCustomers(extractArray(customerRes));
+        setProducts(extractArray(productRes));
+
       } catch (error) { 
         console.error("Lỗi tải dependency cho form:", error); 
+        toast.error("Không thể tải danh sách sản phẩm/khách hàng");
       }
     };
     fetchFormDependencies();
