@@ -120,6 +120,7 @@ const getProducts = async (req, res) => {
 
     const products = await Product.find(query)
       .sort(sortObj)
+      .collation({ locale: 'vi', strength: 2 })
       .skip(limit > 0 ? (page - 1) * limit : 0)
       .limit(limit > 0 ? limit : 0);
 
