@@ -27,6 +27,8 @@ const ProductPage = () => {
 
   // --- STATE TÌM KIẾM, LỌC & SERVER-SIDE PAGINATION ---
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(''); // State mới giải quyết xung đột API
+  
   const [filterStatus, setFilterStatus] = useState('all'); 
   const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' });
   
@@ -54,15 +56,23 @@ const ProductPage = () => {
     }, 100); 
   };
 
+  // --- QUẢN LÝ DEBOUNCE (CHỈ CẬP NHẬT STATE, KHÔNG GỌI API) ---
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+      setCurrentPage(1); // Tự động về trang 1 khi từ khóa tìm kiếm ổn định
+    }, 500);
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchTerm]);
+
   // --- HÀM GỌI API (SERVER-SIDE) ---
   const fetchProducts = useCallback(async () => {
     try {
       setLoading(true);
-      // Tạo query string gửi lên backend
       const params = new URLSearchParams({
         page: currentPage,
         limit: itemsPerPage,
-        search: searchTerm,
+        search: debouncedSearchTerm, // Sử dụng debouncedSearchTerm
         status: filterStatus,
         sortKey: sortConfig.key || 'createdAt',
         sortDir: sortConfig.direction === 'asc' ? 'asc' : 'desc'
@@ -70,7 +80,6 @@ const ProductPage = () => {
 
       const res = await axiosClient.get(`/products?${params.toString()}`);
       
-      // Nhận dữ liệu phân trang từ backend
       if (res.pagination) {
           setProducts(res.data);
           setTotalItems(res.pagination.totalItems);
@@ -82,23 +91,12 @@ const ProductPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, itemsPerPage, searchTerm, filterStatus, sortConfig]);
+  }, [currentPage, itemsPerPage, debouncedSearchTerm, filterStatus, sortConfig]);
 
-  // Kích hoạt gọi API khi có thay đổi (Ngoại trừ searchTerm sẽ dùng Debounce bên dưới)
+  // --- GỌI API TẬP TRUNG TẠI MỘT NƠI DUY NHẤT ---
   useEffect(() => {
     fetchProducts();
-  }, [currentPage, itemsPerPage, filterStatus, sortConfig, refreshFlags.products]);
-
-  // --- DEBOUNCE TÌM KIẾM ---
-  // Tự động tìm kiếm sau khi người dùng ngừng gõ 500ms
-  useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      setCurrentPage(1); // Reset về trang 1 khi tìm kiếm
-      fetchProducts();
-    }, 500);
-
-    return () => clearTimeout(delayDebounceFn);
-  }, [searchTerm]);
+  }, [fetchProducts, refreshFlags.products]);
 
   useEffect(() => {
     if (!showModal) resetForm();
@@ -108,7 +106,7 @@ const ProductPage = () => {
     let direction = 'asc';
     if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
     setSortConfig({ key, direction });
-    setCurrentPage(1); // Reset về trang 1 khi sort
+    setCurrentPage(1); 
   };
 
   const renderSortIcon = (key) => {
@@ -117,9 +115,7 @@ const ProductPage = () => {
   };
 
   const paginate = (pageNumber) => {
-    if (pageNumber > 0 && pageNumber <= totalPages) {
-      setCurrentPage(pageNumber);
-    }
+    if (pageNumber > 0 && pageNumber <= totalPages) setCurrentPage(pageNumber);
   };
 
   const getCurrentDateTime = () => {
@@ -128,20 +124,18 @@ const ProductPage = () => {
   };
 
   // --- CÁC HÀM XUẤT FILE ---
-  // Lưu ý: Xuất Excel bây giờ cần gọi API lấy TOÀN BỘ dữ liệu đã lọc (không có page)
   const handleExportExcel = async () => {
     try {
       toast.info("Đang xử lý dữ liệu xuất Excel...");
       const params = new URLSearchParams({
-        limit: 'all', // Yêu cầu backend trả về tất cả kết quả match với filter hiện tại
-        search: searchTerm,
+        limit: 'all', 
+        search: debouncedSearchTerm, // Dùng dữ liệu đã lọc ổn định
         status: filterStatus,
         sortKey: sortConfig.key || 'createdAt',
         sortDir: sortConfig.direction === 'asc' ? 'asc' : 'desc'
       });
       
       const allData = await axiosClient.get(`/products?${params.toString()}`);
-      // Trường hợp backend trả về object (do code mới) hoặc array (do code cũ)
       const exportList = allData.data ? allData.data : allData;
 
       const dataToExport = exportList.map(p => ({
@@ -207,7 +201,7 @@ const ProductPage = () => {
       }
       
       handleCloseModal();
-      fetchProducts(); // Refresh danh sách hiện tại
+      fetchProducts(); 
     } catch (error) {
       const message = error.response?.data?.message || error.message;
       toast.error(`Lỗi: ${message}`);
@@ -221,7 +215,6 @@ const ProductPage = () => {
         await axiosClient.delete(`/products/${id}`);
         toast.success('Đã xóa sản phẩm');
         
-        // Nếu xóa phần tử cuối cùng của trang, lùi lại 1 trang
         if (products.length === 1 && currentPage > 1) {
             setCurrentPage(currentPage - 1);
         } else {
@@ -265,7 +258,6 @@ const ProductPage = () => {
 
   return (
     <div className="p-2 pb-10">
-      {/* --- ĐỊNH NGHĨA KEYFRAMES ANIMATION (FadeIn & FadeOut) --- */}
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: scale(0.95); }
@@ -277,9 +269,7 @@ const ProductPage = () => {
         }
       `}</style>
 
-      {/* ----------------- GIAO DIỆN WEB ----------------- */}
       <div className="print:hidden"> 
-        {/* HEADER */}
         <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
           <div className="flex items-center gap-3 self-start md:self-center">
               <button onClick={() => setIsExpanded(!isExpanded)} className="p-2 rounded-lg hover:bg-gray-100 text-black-600 transition-colors">
@@ -289,14 +279,20 @@ const ProductPage = () => {
           </div>
           
           <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-            {/* Search */}
+            {/* Thanh tìm kiếm */}
             <div className="relative flex-1 md:w-64">
               <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-              <input type="text" className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm" placeholder="Tìm tên, mã SP hoặc Nhãn hàng..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+              <input 
+                type="text" 
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm" 
+                placeholder="Tìm tên, mã SP hoặc Nhãn hàng..." 
+                value={searchTerm} 
+                onChange={(e) => setSearchTerm(e.target.value)} 
+              />
               {searchTerm && (<button onClick={() => setSearchTerm('')} className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={14} /></button>)}
             </div>
 
-            {/* Filter */}
+            {/* Các Filter và Buttons (Giữ nguyên) */}
             <div className="relative">
               <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 pointer-events-none"><Filter size={16} /></div>
               <select className="pl-9 pr-8 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm appearance-none bg-white cursor-pointer hover:bg-gray-50" value={filterStatus} onChange={(e) => {setFilterStatus(e.target.value); setCurrentPage(1);}}>
@@ -306,7 +302,6 @@ const ProductPage = () => {
               </select>
             </div>
 
-            {/* Export Menu */}
             <div className="relative">
               <button onClick={() => setShowExportMenu(!showExportMenu)} className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg flex items-center gap-2 font-medium shadow-sm transition-colors text-sm">
                 <Download size={18} /><span className="hidden sm:inline">Xuất file</span><ChevronDown size={14} />
@@ -320,16 +315,14 @@ const ProductPage = () => {
               {showExportMenu && (<div className="fixed inset-0 z-10" onClick={() => setShowExportMenu(false)}></div>)}
             </div>
 
-            {/* Add Button */}
             <button onClick={() => setShowModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium shadow-sm transition-colors whitespace-nowrap">
               <Plus size={20} /> <span className="hidden sm:inline">Thêm mới</span>
             </button>
           </div>
         </div>
 
-        {/* TABLE WEB */}
+        {/* BẢNG DỮ LIỆU */}
         <div className="bg-white rounded-xl shadow-sm border overflow-hidden relative min-h-[400px]">
-          {/* Lớp overlay mờ khi đang loading chuyển trang */}
           {loading && (
              <div className="absolute inset-0 bg-white bg-opacity-60 z-10 flex items-center justify-center">
                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -387,7 +380,7 @@ const ProductPage = () => {
             </table>
           </div>
 
-          {/* --- THANH PHÂN TRANG UI (CẬP NHẬT THEO SERVER STATE) --- */}
+          {/* PHÂN TRANG */}
           {totalItems > 0 && (
             <div className="flex items-center justify-between px-4 py-3 border-t">
               <div className="text-sm text-gray-500">
@@ -398,10 +391,7 @@ const ProductPage = () => {
                 <select 
                   className="border border-gray-300 rounded-md text-sm px-2 py-1 focus:ring-1 focus:ring-blue-500 outline-none cursor-pointer bg-white"
                   value={itemsPerPage}
-                  onChange={(e) => {
-                    setItemsPerPage(Number(e.target.value));
-                    setCurrentPage(1); // Quay về trang 1 khi đổi số lượng hiển thị
-                  }}
+                  onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
                 >
                   <option value="10">10 dòng</option>
                   <option value="20">20 dòng</option>
@@ -409,11 +399,7 @@ const ProductPage = () => {
                   <option value="100">100 dòng</option>
                 </select>
 
-                <button 
-                  onClick={() => paginate(currentPage - 1)} 
-                  disabled={currentPage === 1}
-                  className={`p-1 rounded-md border ${currentPage === 1 ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50 cursor-pointer'}`}
-                >
+                <button onClick={() => paginate(currentPage - 1)} disabled={currentPage === 1} className={`p-1 rounded-md border ${currentPage === 1 ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50 cursor-pointer'}`}>
                   <ChevronLeft size={20} />
                 </button>
                 
@@ -426,26 +412,14 @@ const ProductPage = () => {
                     }
                     
                     return (
-                      <button
-                        key={pageNum}
-                        onClick={() => paginate(pageNum)}
-                        className={`w-8 h-8 flex items-center justify-center rounded-md text-sm font-medium transition-colors ${
-                          currentPage === pageNum 
-                            ? 'bg-blue-600 text-white shadow-sm cursor-default' 
-                            : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 cursor-pointer'
-                        }`}
-                      >
+                      <button key={pageNum} onClick={() => paginate(pageNum)} className={`w-8 h-8 flex items-center justify-center rounded-md text-sm font-medium transition-colors ${currentPage === pageNum ? 'bg-blue-600 text-white shadow-sm cursor-default' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 cursor-pointer'}`}>
                         {pageNum}
                       </button>
                     )
                   })}
                 </div>
 
-                <button 
-                  onClick={() => paginate(currentPage + 1)} 
-                  disabled={currentPage === totalPages}
-                  className={`p-1 rounded-md border ${currentPage === totalPages ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50 cursor-pointer'}`}
-                >
+                <button onClick={() => paginate(currentPage + 1)} disabled={currentPage === totalPages} className={`p-1 rounded-md border ${currentPage === totalPages ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50 cursor-pointer'}`}>
                   <ChevronRight size={20} />
                 </button>
               </div>
@@ -454,17 +428,12 @@ const ProductPage = () => {
         </div>
       </div>
 
-      {/* ----------------- MẪU BÁO CÁO ----------------- */}
-      <div 
-        id="report-template" 
-        ref={reportRef}
-        className="fixed top-0 left-[-9999px] w-[650px] bg-white p-10 print:static print:left-0 print:w-full z-[-50]"
-      >
+      {/* --- MẪU BÁO CÁO (Giữ nguyên) --- */}
+      <div id="report-template" ref={reportRef} className="fixed top-0 left-[-9999px] w-[650px] bg-white p-10 print:static print:left-0 print:w-full z-[-50]">
         <div className="text-center mb-6">
           <h1 className="text-3xl font-bold uppercase mb-2 text-black">BÁO CÁO TỒN KHO</h1>
           <p className="text-sm text-gray-600 italic">{getCurrentDateTime()}</p>
         </div>
-
         <table className="w-full border-collapse border border-black text-sm">
           <thead>
             <tr className="bg-gray-100">
@@ -476,37 +445,28 @@ const ProductPage = () => {
             </tr>
           </thead>
           <tbody>
-            {products.map((p) => {
-              return (
-                <tr key={p._id}>
-                  <td className="border border-black p-2 text-left text-black">{p.name}</td>
-                  <td className="border border-black p-2 text-left text-black">{p.brand || '-'}</td>
-                  <td className="border border-black p-2 text-center text-black">{p.unit}</td>
-                  <td className="border border-black p-2 text-center text-black">{p.gift_points || 0}</td>
-                  <td className="border border-black p-2 text-center text-black font-medium">{p.current_stock}</td>
-                </tr>
-              );
-            })}
+            {products.map((p) => (
+              <tr key={p._id}>
+                <td className="border border-black p-2 text-left text-black">{p.name}</td>
+                <td className="border border-black p-2 text-left text-black">{p.brand || '-'}</td>
+                <td className="border border-black p-2 text-center text-black">{p.unit}</td>
+                <td className="border border-black p-2 text-center text-black">{p.gift_points || 0}</td>
+                <td className="border border-black p-2 text-center text-black font-medium">{p.current_stock}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
 
-      {/* MODAL FORM */}
+      {/* MODAL FORM (Giữ nguyên) */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 backdrop-blur-sm">
-           <div 
-             className="bg-white rounded-xl shadow-2xl w-full max-w-3xl p-6 transform scale-100"
-             style={{ 
-               animation: isClosing ? 'fadeOut 0.1s ease-out forwards' : 'fadeIn 0.1s ease-out forwards' 
-             }} 
-           >
+           <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl p-6 transform scale-100" style={{ animation: isClosing ? 'fadeOut 0.1s ease-out forwards' : 'fadeIn 0.1s ease-out forwards' }}>
             <div className="flex justify-between items-center mb-6 border-b pb-3">
               <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
                 {isEditMode ? <><Pencil size={23} className="text-black-600" /> Cập nhật sản phẩm</> : <><Plus size={23} className="text-black-600" /> Thêm sản phẩm mới</>}
               </h2>
-              <button onClick={handleCloseModal} className="text-gray-400 hover:text-red-500 transition-colors">
-                <X size={24} />
-              </button>
+              <button onClick={handleCloseModal} className="text-gray-400 hover:text-red-500 transition-colors"><X size={24} /></button>
             </div>
             <form onSubmit={handleSaveProduct}>
               <div className="grid grid-cols-2 gap-6 mb-4">
@@ -546,10 +506,7 @@ const ProductPage = () => {
                   onChange={(selected) => setFormData({ ...formData, brand: selected ? selected.value : '' })}
                   placeholder="Chọn hoặc nhập mới..."
                   formatCreateLabel={(inputValue) => `Tạo nhãn hàng mới: "${inputValue}"`}
-                  styles={{
-                    control: (base) => ({ ...base, borderRadius: '0.5rem', borderColor: '#d1d5db', minHeight: '42px', fontSize: '14px' }),
-                    menu: (base) => ({ ...base, zIndex: 9999 })
-                  }}
+                  styles={{ control: (base) => ({ ...base, borderRadius: '0.5rem', borderColor: '#d1d5db', minHeight: '42px', fontSize: '14px' }), menu: (base) => ({ ...base, zIndex: 9999 }) }}
                 />
               </div>
                   <div>
