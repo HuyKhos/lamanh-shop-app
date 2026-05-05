@@ -58,6 +58,7 @@ const ExportPage = () => {
   const [isSearchFocus, setIsSearchFocus] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [idempotencyKey, setIdempotencyKey] = useState(uuidv4());
+  const [isDraftLoaded, setIsDraftLoaded] = useState(false);
   
   useEffect(() => {
     if (showModal && !isViewMode) {
@@ -97,32 +98,53 @@ const ExportPage = () => {
     }
   }, [newExport.details, showModal, isViewMode]);
 
+  // 1. useEffect: Khôi phục bản nháp KHI MỞ MODAL
   useEffect(() => {
     if (showModal && !isViewMode) {
       const savedDraft = localStorage.getItem(DRAFT_KEY);
       fetchNewCode();
 
       if (savedDraft) {
-         try {
-             const parsedDraft = JSON.parse(savedDraft);
-             if (parsedDraft.details && parsedDraft.details.length > 0) {
-                 setNewExport(prev => ({
-                     ...INITIAL_EXPORT_STATE,
-                     code: prev.code,         
-                     details: parsedDraft.details 
-                 }));
-                 setSelectedCustomerInfo(null);
-                 toast.info('Đã khôi phục danh sách sản phẩm cũ', { autoClose: 2000 });
-             }
-         } catch (e) { 
-             localStorage.removeItem(DRAFT_KEY); 
-         }
+        try {
+            const parsedDraft = JSON.parse(savedDraft);
+            if (parsedDraft.details && parsedDraft.details.length > 0) {
+                setNewExport(prev => ({
+                    ...INITIAL_EXPORT_STATE,
+                    code: prev.code,         
+                    details: parsedDraft.details 
+                }));
+                setSelectedCustomerInfo(null);
+                toast.info('Đã khôi phục danh sách sản phẩm cũ', { autoClose: 2000 });
+            }
+        } catch (e) { 
+            localStorage.removeItem(DRAFT_KEY); 
+        }
       } else {
           setNewExport(prev => ({ ...INITIAL_EXPORT_STATE, code: prev.code }));
           setSelectedCustomerInfo(null);
       }
+      
+      // Bật công tắc báo hiệu: "Đã tải nháp xong, bắt đầu theo dõi để lưu!"
+      setIsDraftLoaded(true);
+    } else {
+      // Tắt công tắc khi đóng Modal
+      setIsDraftLoaded(false);
     }
   }, [showModal, isViewMode]);
+
+  // 2. useEffect: Lưu bản nháp khi có thay đổi
+  useEffect(() => {
+    // CHỈ LƯU khi đang ở chế độ tạo (showModal && !isViewMode) VÀ đã tải nháp xong (isDraftLoaded)
+    if (showModal && !isViewMode && isDraftLoaded) {
+      if (newExport.details.length > 0) {
+          const draftData = { details: newExport.details };
+          localStorage.setItem(DRAFT_KEY, JSON.stringify(draftData));
+      } else {
+          localStorage.removeItem(DRAFT_KEY);
+      }
+      localStorage.removeItem('export_draft_customer'); 
+    }
+  }, [newExport.details, showModal, isViewMode, isDraftLoaded]);
 
   const handleResetForm = () => {
     if (window.confirm('Bạn có chắc muốn xóa hết sản phẩm để tạo phiếu mới?')) {
@@ -168,31 +190,34 @@ const ExportPage = () => {
     }
   }, [currentPage, itemsPerPage, searchTerm, sortConfig]);
 
-  // --- TẢI DANH SÁCH KHÁCH HÀNG VÀ SẢN PHẨM ĐỂ TẠO PHIẾU ---
+  // Thay thế useEffect cũ bằng đoạn này
   useEffect(() => {
     const fetchFormDependencies = async () => {
       try {
         const [customerRes, productRes] = await Promise.all([
           axiosClient.get('/partners?type=customer'), 
-          axiosClient.get('/products?limit=all') // Lấy toàn bộ kho        
+          axiosClient.get('/products?limit=all') 
         ]);
         
-        // HÀM ÉP KIỂU MẢNG: Quét sâu vào response để tìm mảng dữ liệu
-        const getSafeArray = (res) => {
-            if (Array.isArray(res)) return res;
-            if (res?.data && Array.isArray(res.data)) return res.data;
-            if (res?.data?.data && Array.isArray(res.data.data)) return res.data.data;
-            return [];
+        const extractArray = (res) => {
+          if (Array.isArray(res)) return res;
+          if (res?.data && Array.isArray(res.data)) return res.data;
+          if (res?.data?.data && Array.isArray(res.data.data)) return res.data.data;
+          return []; 
         };
 
-        setCustomers(getSafeArray(customerRes));
-        setProducts(getSafeArray(productRes));
+        setCustomers(extractArray(customerRes));
+        setProducts(extractArray(productRes));
+
       } catch (error) { 
         console.error("Lỗi tải dependency cho form:", error); 
+        toast.error("Không thể tải danh sách sản phẩm/khách hàng");
       }
     };
     fetchFormDependencies();
-  }, []);
+    
+  // THÊM refreshFlags.products VÀO ĐÂY ĐỂ LẤY LẠI KHO KHI CÓ ĐƠN HÀNG MỚI
+  }, [refreshFlags.products]);
 
   useEffect(() => {
     fetchExports();
@@ -603,7 +628,7 @@ const ExportPage = () => {
     setNewExport({ ...newExport, details: [...newExport.details, newItem] }); 
     setProductSearch(''); 
     setFilteredProducts([]); 
-    setIsSearchFocus(true); 
+    setIsSearchFocus(false); 
     setActiveIndex(-1); 
   };
 
