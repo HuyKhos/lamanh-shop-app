@@ -173,11 +173,18 @@ const ExportPage = () => {
       try {
         const [customerRes, productRes] = await Promise.all([
           axiosClient.get('/partners?type=customer'), 
-          axiosClient.get('/products')           
+          axiosClient.get('/products?limit=all') // Đã thêm ?limit=all để lấy toàn bộ kho        
         ]);
-        setCustomers(customerRes);
-        setProducts(productRes);
-      } catch (error) { console.error("Lỗi tải dependency cho form:", error); }
+        
+        // Trích xuất đúng mảng dữ liệu (Array) từ kết quả trả về
+        const customersData = customerRes.data ? customerRes.data : customerRes;
+        const productsData = productRes.data ? productRes.data : productRes;
+
+        setCustomers(customersData);
+        setProducts(productsData);
+      } catch (error) { 
+        console.error("Lỗi tải dependency cho form:", error); 
+      }
     };
     fetchFormDependencies();
   }, []);
