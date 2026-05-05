@@ -67,35 +67,22 @@ const updateProduct = async (req, res) => {
   }
 };
 
-// @desc    Lấy danh sách sản phẩm (Phân trang Server)
+// @desc    Lấy danh sách sản phẩm (Hỗ trợ phân trang và xuất báo cáo Excel)
 const getProducts = async (req, res) => {
   try {
-    const isPaginated = req.query.page !== undefined;
-
-    // NẾU GỌI TỪ TRANG KHÁC (KHÔNG PHÂN TRANG)
-    if (!isPaginated) {
-      const products = await Product.find({}).sort({ createdAt: -1 });
-      return res.json(products);
-    }
-
-    // NẾU GỌI TỪ TRANG SẢN PHẨM (CÓ PHÂN TRANG)
-    const page = parseInt(req.query.page) || 1;
-    
-    // Fix lỗi xuất Excel (limit = all)
-    let limit = 10;
-    if (req.query.limit === 'all') {
-        limit = 0; // 0 trong Mongoose có nghĩa là lấy tất cả
-    } else if (req.query.limit) {
-        limit = parseInt(req.query.limit) || 10;
-    }
-
+    // 1. Nhận các tham số từ URL
     const search = req.query.search || '';
     const status = req.query.status || 'all';
     const sortKey = req.query.sortKey || 'createdAt';
     const sortDir = req.query.sortDir === 'asc' ? 1 : -1;
+    
+    const limitParam = req.query.limit;
+    const pageParam = req.query.page;
 
+    // 2. Xây dựng "chiếc rổ lọc" (query)
     let query = {};
 
+    // Lọc theo từ khóa tìm kiếm (tên, mã SP, nhãn hàng)
     if (search) {
       const searchKeywords = search.toLowerCase().split(/\s+/).filter(word => word.length > 0);
       if (searchKeywords.length > 0) {
@@ -109,26 +96,49 @@ const getProducts = async (req, res) => {
       }
     }
 
+    // Lọc theo trạng thái còn/hết hàng
     if (status === 'in_stock') query.current_stock = { $gt: 0 };
     if (status === 'out_of_stock') query.current_stock = { $lte: 0 };
 
+    // Thiết lập điều kiện sắp xếp
     let sortObj = {};
     if (sortKey) sortObj[sortKey] = sortDir;
 
+    // =======================================================
+    // 3. XỬ LÝ TRƯỜNG HỢP XUẤT EXCEL HOẶC LẤY TẤT CẢ DỮ LIỆU
+    // =======================================================
+    // Nếu Frontend yêu cầu limit='all' HOẶC không gửi tham số page
+    if (limitParam === 'all' || !pageParam) {
+      const products = await Product.find(query)
+        .sort(sortObj)
+        .collation({ locale: 'vi', strength: 2 }); // Hỗ trợ xếp tiếng Việt chuẩn
+      
+      // Trả về dữ liệu đã lọc mà KHÔNG bị cắt trang
+      // Đặt trong { data: ... } để Frontend dễ đồng bộ cách lấy dữ liệu
+      return res.json({ data: products }); 
+    }
+
+    // =======================================================
+    // 4. XỬ LÝ TRƯỜNG HỢP HIỂN THỊ BẢNG TRÊN WEB (CÓ PHÂN TRANG)
+    // =======================================================
+    const page = parseInt(pageParam) || 1;
+    const limit = parseInt(limitParam) || 10;
+    const skip = (page - 1) * limit;
+
     const totalItems = await Product.countDocuments(query);
-    const totalPages = limit > 0 ? Math.ceil(totalItems / limit) : 1;
+    const totalPages = Math.ceil(totalItems / limit) || 1;
 
     const products = await Product.find(query)
       .sort(sortObj)
       .collation({ locale: 'vi', strength: 2 })
-      .skip(limit > 0 ? (page - 1) * limit : 0)
-      .limit(limit > 0 ? limit : 0);
+      .skip(skip)
+      .limit(limit);
 
     res.json({
       data: products,
       pagination: {
         currentPage: page,
-        totalPages: totalPages || 1,
+        totalPages: totalPages,
         totalItems: totalItems,
         itemsPerPage: limit
       }
