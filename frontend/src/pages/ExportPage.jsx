@@ -168,30 +168,27 @@ const ExportPage = () => {
     }
   }, [currentPage, itemsPerPage, searchTerm, sortConfig]);
 
+  // --- TẢI DANH SÁCH KHÁCH HÀNG VÀ SẢN PHẨM ĐỂ TẠO PHIẾU ---
   useEffect(() => {
     const fetchFormDependencies = async () => {
       try {
         const [customerRes, productRes] = await Promise.all([
           axiosClient.get('/partners?type=customer'), 
-          axiosClient.get('/products?limit=all') // Lấy toàn bộ kho để tìm kiếm      
+          axiosClient.get('/products?limit=all') // Lấy toàn bộ kho        
         ]);
         
-        // --- HÀM TRÍCH XUẤT THÔNG MINH ---
-        // Hàm này quét dữ liệu trả về, tìm đúng Mảng (Array) để tránh lỗi .filter()
-        const extractArray = (res) => {
-          if (Array.isArray(res)) return res; // Trường hợp 1: Bản thân nó đã là Mảng
-          if (res?.data && Array.isArray(res.data)) return res.data; // Trường hợp 2: Bị bọc 1 lớp .data
-          if (res?.data?.data && Array.isArray(res.data.data)) return res.data.data; // Trường hợp 3: Bị bọc 2 lớp .data
-          return []; // Bảo vệ: Luôn trả về mảng rỗng nếu có lỗi, giúp web không bị trắng trang
+        // HÀM ÉP KIỂU MẢNG: Quét sâu vào response để tìm mảng dữ liệu
+        const getSafeArray = (res) => {
+            if (Array.isArray(res)) return res;
+            if (res?.data && Array.isArray(res.data)) return res.data;
+            if (res?.data?.data && Array.isArray(res.data.data)) return res.data.data;
+            return [];
         };
 
-        // Gán mảng dữ liệu sạch vào State
-        setCustomers(extractArray(customerRes));
-        setProducts(extractArray(productRes));
-
+        setCustomers(getSafeArray(customerRes));
+        setProducts(getSafeArray(productRes));
       } catch (error) { 
         console.error("Lỗi tải dependency cho form:", error); 
-        toast.error("Không thể tải danh sách sản phẩm/khách hàng");
       }
     };
     fetchFormDependencies();
@@ -672,6 +669,7 @@ const ExportPage = () => {
     return Math.round(qty * finalPrice); 
   };
   
+  // --- TÍNH NĂNG TÌM KIẾM SẢN PHẨM (ĐÃ THÊM GIÁP BẢO VỆ) ---
   useEffect(() => {
     if (!isSearchFocus && productSearch.trim() === '') {
       setFilteredProducts([]);
@@ -680,13 +678,25 @@ const ExportPage = () => {
     }
     
     let results = [];
+    
+    // LỚP PHÒNG THỦ 1: Ép kiểu dữ liệu. 
+    // Nếu products không phải là mảng, cố gắng tìm mảng bên trong thuộc tính .data, nếu không có thì trả về mảng rỗng [].
+    const safeProducts = Array.isArray(products) 
+        ? products 
+        : (products?.data && Array.isArray(products.data) ? products.data : []);
+
     if (isSearchFocus && productSearch.trim() === '') {
-      results = products;
+      results = safeProducts;
     } else {
+      // LỚP PHÒNG THỦ 2: Kiểm tra từ khóa hợp lệ
       const searchKeywords = productSearch.toLowerCase().split(/\s+/).filter(word => word.length > 0);
-      results = products.filter(p => {
-        const productName = p.name.toLowerCase();
-        const productSku = (p.sku || '').toLowerCase();
+      
+      // Lúc này safeProducts chắc chắn 100% là Mảng, hàm .filter() sẽ không bao giờ báo lỗi
+      results = safeProducts.filter(p => {
+        // Đảm bảo tên và mã SKU không bị undefined gây lỗi toLowerCase()
+        const productName = (p?.name || '').toLowerCase();
+        const productSku = (p?.sku || '').toLowerCase();
+        
         return searchKeywords.every(keyword => 
             productName.includes(keyword) || productSku.includes(keyword)
         );
@@ -694,7 +704,7 @@ const ExportPage = () => {
     }
     
     setFilteredProducts(results);
-  
+
     if (results.length > 0) {
       setActiveIndex(0);
     } else {
