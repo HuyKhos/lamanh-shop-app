@@ -474,7 +474,9 @@ const ExportPage = () => {
             const product = products.find(p => p._id === item.product_id); 
             if (!product) return item; 
             
-            const originalPrice = product.export_price || 0;
+            // SỬA LỖI TẠI ĐÂY: Sử dụng toán tử ?? thay vì ||
+            // Toán tử ?? đảm bảo số 0 do bạn nhập vẫn được giữ nguyên, không bị đè bằng giá gốc
+            const currentPrice = item.export_price ?? (product.export_price || 0);
             
             const brandConfig = customer?.brand_discounts?.find(d => d.brand === product.brand) || 
             selectedCustomerInfo?.brand_discounts?.find(d => d.brand === product.brand);
@@ -491,11 +493,9 @@ const ExportPage = () => {
             
             return { 
                 ...item, 
-                export_price: originalPrice, 
-                // SỬA LỖI TẠI ĐÂY: Đổi totalDiscount thành autoDiscount
+                export_price: currentPrice, // Dùng giá hiện tại (bảo toàn được số 0)
                 discount: autoDiscount,        
-                // SỬA LỖI TẠI ĐÂY: Đổi totalDiscount thành autoDiscount
-                total: calculateLineTotal(item.quantity, originalPrice, autoDiscount) 
+                total: calculateLineTotal(item.quantity, currentPrice, autoDiscount) 
             }; 
         }); 
         return { ...prev, details: newDetails }; 

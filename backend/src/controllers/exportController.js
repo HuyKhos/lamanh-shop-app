@@ -57,7 +57,7 @@ const createExport = async (req, res) => {
       const discountPercent = Math.floor(totalDiscountDecimal * 10000) / 100;
       // ----------------------------------------------------
 
-      const basePrice = item.export_price || product.export_price;
+      const basePrice = item.export_price ?? product.export_price;
       const appliedPrice = basePrice * (1 - discountPercent / 100);
       const lineTotal = Math.round(appliedPrice * item.quantity);
 
