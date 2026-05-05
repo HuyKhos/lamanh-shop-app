@@ -484,8 +484,10 @@ const ExportPage = () => {
             return { 
                 ...item, 
                 export_price: originalPrice, 
-                discount: totalDiscount,       
-                total: calculateLineTotal(item.quantity, originalPrice, totalDiscount) 
+                // SỬA LỖI TẠI ĐÂY: Đổi totalDiscount thành autoDiscount
+                discount: autoDiscount,        
+                // SỬA LỖI TẠI ĐÂY: Đổi totalDiscount thành autoDiscount
+                total: calculateLineTotal(item.quantity, originalPrice, autoDiscount) 
             }; 
         }); 
         return { ...prev, details: newDetails }; 
