@@ -326,8 +326,7 @@ const ExportPage = () => {
         totalRow = `<tr style="font-weight:bold;"><td colspan="4" style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">TỔNG CỘNG</td><td style="text-align:center; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatNumber(totalQty)}</td><td style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatCurrency(totalRawAmount)}</td><td style="${cssConfig.cellBorder} ${cssConfig.paddingTD}"></td><td style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatCurrency(totalSubtotal)}</td><td style="text-align:center; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${totalPointsThisBill > 0 ? '+' : ''}${totalPointsThisBill}</td></tr>`; 
         
         if (totalCustomerDiscountAmount > 0) {
-            totalRow += `<tr style="font-weight:bold; color: #d97706;"><td colspan="7" style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">CHIẾT KHẤU THÊM ${partnerDiscText}</td><td style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">- ${formatCurrency(totalCustomerDiscountAmount)}</td><td style="${cssConfig.cellBorder} ${cssConfig.paddingTD}"></td></tr>`;
-            totalRow += `<tr style="font-weight:bold; font-size: 14px; background-color: #f3f4f6;"><td colspan="7" style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">CẦN THANH TOÁN</td><td style="text-align:right; color: #dc2626; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatCurrency(totalSubtotal - totalCustomerDiscountAmount)}</td><td style="${cssConfig.cellBorder} ${cssConfig.paddingTD}"></td></tr>`;
+            totalRow += `<tr style="font-weight:bold;"><td colspan="7" style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">CHIẾT KHẤU${partnerDiscText}</td><td style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">- ${formatCurrency(totalCustomerDiscountAmount)}</td><td style="${cssConfig.cellBorder} ${cssConfig.paddingTD}"></td></tr>`;
         }
     } else { 
         totalRow = `<tr style="font-weight:bold;"><td colspan="3" style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">TỔNG</td><td style="text-align:center; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatNumber(totalQty)}</td><td style="text-align:center; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${totalPointsThisBill > 0 ? '+' : ''}${totalPointsThisBill}</td></tr>`; 
@@ -421,10 +420,9 @@ const ExportPage = () => {
         let partnerDiscText = 'CHIẾT KHẤU THÊM KHÁCH HÀNG';
         const uniquePartnerDiscs = [...new Set(item.details.map(d => d.partner_discount || 0))];
         if (uniquePartnerDiscs.length === 1 && uniquePartnerDiscs[0] > 0) {
-            partnerDiscText = `CHIẾT KHẤU THÊM KHÁCH HÀNG (${uniquePartnerDiscs[0]}%)`;
+            partnerDiscText = `CHIẾT KHẤU (${uniquePartnerDiscs[0]}%)`;
         }
         ws_data.push(["", partnerDiscText, "", "", "", "", "", -totalCustomerDiscountAmount, ""]);
-        ws_data.push(["", "CẦN THANH TOÁN", "", "", "", "", "", totalSubtotal - totalCustomerDiscountAmount, ""]);
     }
 
     ws_data.push([]);
