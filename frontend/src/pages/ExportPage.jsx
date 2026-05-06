@@ -329,7 +329,7 @@ const ExportPage = () => {
         
         if (totalCustomerDiscountAmount > 0) {
             // 3. Chỉ gọi duy nhất biến ${partnerDiscText}, không ghép thêm bất kỳ chữ nào khác
-            totalRow += `<tr style="font-weight:bold; color: #d97706;"><td colspan="7" style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${partnerDiscText}</td><td style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">- ${formatCurrency(totalCustomerDiscountAmount)}</td><td style="${cssConfig.cellBorder} ${cssConfig.paddingTD}"></td></tr>`;
+            totalRow += `<tr style="font-weight:bold;"><td colspan="7" style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${partnerDiscText}</td><td style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">- ${formatCurrency(totalCustomerDiscountAmount)}</td><td style="${cssConfig.cellBorder} ${cssConfig.paddingTD}"></td></tr>`;
         }
     } else { 
         totalRow = `<tr style="font-weight:bold;"><td colspan="3" style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">TỔNG</td><td style="text-align:center; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatNumber(totalQty)}</td><td style="text-align:center; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${totalPointsThisBill > 0 ? '+' : ''}${totalPointsThisBill}</td></tr>`; 
