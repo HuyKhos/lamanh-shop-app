@@ -109,16 +109,34 @@ const ImportPage = () => {
   useEffect(() => {
     const fetchFormDependencies = async () => {
       try {
+        const timestamp = new Date().getTime(); // Chặn cache trình duyệt
         const [supplierRes, productRes] = await Promise.all([
-          axiosClient.get('/partners?type=supplier'), 
-          axiosClient.get('/products')           
+          axiosClient.get(`/partners?type=supplier&_t=${timestamp}`), 
+          axiosClient.get(`/products?limit=all&_t=${timestamp}`) // Lấy toàn bộ kho          
         ]);
-        setSuppliers(supplierRes);
-        setProducts(productRes);
-      } catch (error) { console.error("Lỗi tải dependency cho form:", error); }
+        
+        // Hàm trích xuất mảng thông minh
+        const extractArray = (res) => {
+          if (Array.isArray(res)) return res;
+          if (res?.data && Array.isArray(res.data)) return res.data;
+          if (res?.data?.data && Array.isArray(res.data.data)) return res.data.data;
+          return []; 
+        };
+
+        setSuppliers(extractArray(supplierRes));
+        setProducts(extractArray(productRes));
+      } catch (error) { 
+        console.error("Lỗi tải dependency cho form:", error); 
+      }
     };
-    fetchFormDependencies();
-  }, []);
+    
+    // Tự động tải lại kho hàng khi mở Modal tạo phiếu
+    if (showModal || refreshFlags.products !== undefined) {
+      fetchFormDependencies();
+    } else if (!showModal && products.length === 0) {
+      fetchFormDependencies();
+    }
+  }, [refreshFlags.products, showModal]);
 
   // Gọi API fetchImports mỗi khi trang, limit, sort, refresh thay đổi
   useEffect(() => {
@@ -226,25 +244,36 @@ const ImportPage = () => {
 
   const paginate = (pageNumber) => { if (pageNumber > 0 && pageNumber <= totalPages) setCurrentPage(pageNumber); };
 
+  // --- TÍNH NĂNG TÌM KIẾM SẢN PHẨM (ĐÃ THÊM LỚP BẢO VỆ) ---
   useEffect(() => {
     if (!isSearchFocus && productSearch.trim() === '') {
       setFilteredProducts([]); 
       setActiveIndex(-1);
       return;
     }
+    
     let results = [];
+    
+    // Lớp bảo vệ: Ép kiểu dữ liệu về Mảng
+    const safeProducts = Array.isArray(products) 
+        ? products 
+        : (products?.data && Array.isArray(products.data) ? products.data : []);
+
     if (isSearchFocus && productSearch.trim() === '') {
-      results = products;
+      results = safeProducts;
     } else {
       const searchKeywords = productSearch.toLowerCase().split(/\s+/).filter(word => word.length > 0);
-      results = products.filter(p => {
-        const productName = p.name.toLowerCase();
-        const productSku = (p.sku || '').toLowerCase();
+      results = safeProducts.filter(p => {
+        // Đảm bảo không bị lỗi undefined toLowerCase
+        const productName = (p?.name || '').toLowerCase();
+        const productSku = (p?.sku || '').toLowerCase();
+        
         return searchKeywords.every(keyword => 
             productName.includes(keyword) || productSku.includes(keyword)
         );
       });
     }
+    
     setFilteredProducts(results);
     if (results.length > 0) setActiveIndex(0);
     else setActiveIndex(-1);
@@ -299,8 +328,9 @@ const ImportPage = () => {
     }));
     setProductSearch('');
     setFilteredProducts([]);
-    setIsSearchFocus(true); 
+    setIsSearchFocus(false); // <--- SỬA THÀNH FALSE TẠI ĐÂY
     setActiveIndex(-1);
+    if (searchInputRef.current) searchInputRef.current.blur(); // Mẹo ép tắt con trỏ chuột
   };
   
   const preventNumberInputScroll = (e) => { if (e.type === 'wheel') e.target.blur(); };
