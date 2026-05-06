@@ -316,11 +316,11 @@ const ExportPage = () => {
     
     let totalRow = ''; 
     if (!hidePrice) { 
-        // 1. Sửa chữ mặc định thành "CHIẾT KHẤU"
+        // 1. Khai báo biến văn bản chuẩn
         let partnerDiscText = 'CHIẾT KHẤU';
         const uniquePartnerDiscs = [...new Set(item.details.map(d => d.partner_discount || 0))];
         
-        // 2. Tự động thêm % nếu có
+        // 2. Thêm số % nếu có
         if (uniquePartnerDiscs.length === 1 && uniquePartnerDiscs[0] > 0) {
             partnerDiscText = `CHIẾT KHẤU (${uniquePartnerDiscs[0]}%)`;
         }
@@ -328,7 +328,7 @@ const ExportPage = () => {
         totalRow = `<tr style="font-weight:bold;"><td colspan="4" style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">TỔNG CỘNG</td><td style="text-align:center; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatNumber(totalQty)}</td><td style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatCurrency(totalRawAmount)}</td><td style="${cssConfig.cellBorder} ${cssConfig.paddingTD}"></td><td style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatCurrency(totalSubtotal)}</td><td style="text-align:center; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${totalPointsThisBill > 0 ? '+' : ''}${totalPointsThisBill}</td></tr>`; 
         
         if (totalCustomerDiscountAmount > 0) {
-            // 3. Xóa các chữ thừa ở dòng chèn HTML, chỉ gọi đúng biến partnerDiscText
+            // 3. Chỉ gọi duy nhất biến ${partnerDiscText}, không ghép thêm bất kỳ chữ nào khác
             totalRow += `<tr style="font-weight:bold; color: #d97706;"><td colspan="7" style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${partnerDiscText}</td><td style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">- ${formatCurrency(totalCustomerDiscountAmount)}</td><td style="${cssConfig.cellBorder} ${cssConfig.paddingTD}"></td></tr>`;
         }
     } else { 
