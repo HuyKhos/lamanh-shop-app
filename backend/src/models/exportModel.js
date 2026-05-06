@@ -34,7 +34,13 @@ const exportSchema = new mongoose.Schema({
     quantity: Number,
     import_price: Number, // Lưu giá vốn tại thời điểm xuất
     export_price: Number,
-    discount: Number,
+    discount: Number,     // Chiết khấu tổng gộp (Giữ lại để tương thích phiếu cũ)
+    
+    // --- BỔ SUNG 2 TRƯỜNG MỚI ĐỂ BÓC TÁCH CHIẾT KHẤU ---
+    promo_discount: { type: Number, default: 0 },   // Chiết khấu của sản phẩm (%)
+    partner_discount: { type: Number, default: 0 }, // Chiết khấu riêng của khách hàng (%)
+    // --------------------------------------------------
+
     total: Number,
     profit: Number
   }]
