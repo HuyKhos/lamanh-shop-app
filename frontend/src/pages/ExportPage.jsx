@@ -275,7 +275,7 @@ const ExportPage = () => {
         totalRawAmount += rawAmount; 
         const rowPointTotal = detail.quantity * (detail.gift_points || 0); 
 
-        const promoDisc = detail.promo_discount !== undefined ? detail.promo_discount : 0; // Giữ lại logic cũ phòng hờ DB còn sót
+        const promoDisc = detail.promo_discount !== undefined ? detail.promo_discount : 0; 
         const partnerDisc = detail.partner_discount !== undefined ? detail.partner_discount : (detail.discount || 0);
 
         const subtotal = Math.round(rawAmount * (1 - promoDisc / 100));
@@ -286,8 +286,8 @@ const ExportPage = () => {
 
         let priceCells = ''; 
         if (!hidePrice) { 
-            // Đã bỏ cột CK SP(%)
-            priceCells = `<td style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatCurrency(detail.export_price)}</td><td style="text-align:center; font-weight:bold; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatNumber(detail.quantity)}</td><td style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatCurrency(rawAmount)}</td><td style="text-align:right; font-weight: bold; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatCurrency(subtotal)}</td>`; 
+            // Đã xóa cột Tiền, chỉ giữ lại Số Lượng và Thành Tiền
+            priceCells = `<td style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatCurrency(detail.export_price)}</td><td style="text-align:center; font-weight:bold; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatNumber(detail.quantity)}</td><td style="text-align:right; font-weight: bold; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatCurrency(subtotal)}</td>`; 
         } else { 
             priceCells = `<td style="text-align:center; font-weight:bold; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatNumber(detail.quantity)}</td>`; 
         } 
@@ -296,10 +296,10 @@ const ExportPage = () => {
     
     let tableHeader = ''; 
     if (!hidePrice) { 
-        // Đã bỏ tiêu đề CK SP(%)
-        tableHeader = `<tr><th rowspan="2" style="width: 5%; ${cssConfig.cellBorder} ${cssConfig.paddingTH}">STT</th><th rowspan="2" style="${cssConfig.cellBorder} ${cssConfig.paddingTH}">Tên sản phẩm</th><th rowspan="2" style="width: 6%; ${cssConfig.cellBorder} ${cssConfig.paddingTH}">ĐVT</th><th rowspan="2" style="width: 10%; ${cssConfig.cellBorder} ${cssConfig.paddingTH}">Đơn giá</th><th colspan="2" style="width: 16%; ${cssConfig.cellBorder} ${cssConfig.paddingTH}">Bán</th><th rowspan="2" style="width: 14%; white-space: nowrap; ${cssConfig.cellBorder} ${cssConfig.paddingTH}">Thành tiền</th><th rowspan="2" style="width: 8%; ${cssConfig.cellBorder} ${cssConfig.paddingTH}">Điểm<br>quà</th></tr><tr><th style="width: 6%; ${cssConfig.cellBorder} ${cssConfig.paddingTH}">SL</th><th style="${cssConfig.cellBorder} ${cssConfig.paddingTH}">Tiền</th></tr>`; 
+        // Đã xóa tiêu đề Bán và Tiền, thiết kế lại thành 1 hàng duy nhất
+        tableHeader = `<tr><th style="width: 5%; ${cssConfig.cellBorder} ${cssConfig.paddingTH}">STT</th><th style="${cssConfig.cellBorder} ${cssConfig.paddingTH}">Tên sản phẩm</th><th style="width: 6%; ${cssConfig.cellBorder} ${cssConfig.paddingTH}">ĐVT</th><th style="width: 10%; ${cssConfig.cellBorder} ${cssConfig.paddingTH}">Đơn giá</th><th style="width: 8%; ${cssConfig.cellBorder} ${cssConfig.paddingTH}">SL</th><th style="width: 14%; white-space: nowrap; ${cssConfig.cellBorder} ${cssConfig.paddingTH}">Thành tiền</th><th style="width: 8%; ${cssConfig.cellBorder} ${cssConfig.paddingTH}">Điểm<br>quà</th></tr>`; 
     } else { 
-        tableHeader = `<tr><th rowspan="2" style="width: 5%; ${cssConfig.cellBorder} ${cssConfig.paddingTH}">STT</th><th rowspan="2" style="${cssConfig.cellBorder} ${cssConfig.paddingTH}">Tên sản phẩm</th><th rowspan="2" style="width: 10%; ${cssConfig.cellBorder} ${cssConfig.paddingTH}">ĐVT</th><th rowspan="2" style="width: 10%; ${cssConfig.cellBorder} ${cssConfig.paddingTH}">SL</th><th rowspan="2" style="width: 10%; ${cssConfig.cellBorder} ${cssConfig.paddingTH}">Điểm quà</th></tr>`; 
+        tableHeader = `<tr><th style="width: 5%; ${cssConfig.cellBorder} ${cssConfig.paddingTH}">STT</th><th style="${cssConfig.cellBorder} ${cssConfig.paddingTH}">Tên sản phẩm</th><th style="width: 10%; ${cssConfig.cellBorder} ${cssConfig.paddingTH}">ĐVT</th><th style="width: 10%; ${cssConfig.cellBorder} ${cssConfig.paddingTH}">SL</th><th style="width: 10%; ${cssConfig.cellBorder} ${cssConfig.paddingTH}">Điểm quà</th></tr>`; 
     }
     
     let totalRow = ''; 
@@ -310,11 +310,11 @@ const ExportPage = () => {
             partnerDiscText = `CHIẾT KHẤU (${uniquePartnerDiscs[0]}%)`;
         }
 
-        totalRow = `<tr style="font-weight:bold;"><td colspan="4" style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">TỔNG CỘNG</td><td style="text-align:center; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatNumber(totalQty)}</td><td style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatCurrency(totalRawAmount)}</td><td style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatCurrency(totalSubtotal)}</td><td style="text-align:center; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${totalPointsThisBill > 0 ? '+' : ''}${totalPointsThisBill}</td></tr>`; 
+        totalRow = `<tr style="font-weight:bold;"><td colspan="4" style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">TỔNG CỘNG</td><td style="text-align:center; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatNumber(totalQty)}</td><td style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatCurrency(totalSubtotal)}</td><td style="text-align:center; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${totalPointsThisBill > 0 ? '+' : ''}${totalPointsThisBill}</td></tr>`; 
         
         if (totalCustomerDiscountAmount > 0) {
-            // Đã điều chỉnh colspan thành 6 vì xóa mất 1 cột
-            totalRow += `<tr style="font-weight:bold;"><td colspan="6" style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${partnerDiscText}</td><td style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">- ${formatCurrency(totalCustomerDiscountAmount)}</td><td style="${cssConfig.cellBorder} ${cssConfig.paddingTD}"></td></tr>`;
+            // Giảm số colspan xuống 5 do đã xóa 1 cột
+            totalRow += `<tr style="font-weight:bold;"><td colspan="5" style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${partnerDiscText}</td><td style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">- ${formatCurrency(totalCustomerDiscountAmount)}</td><td style="${cssConfig.cellBorder} ${cssConfig.paddingTD}"></td></tr>`;
         }
     } else { 
         totalRow = `<tr style="font-weight:bold;"><td colspan="3" style="text-align:right; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">TỔNG</td><td style="text-align:center; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${formatNumber(totalQty)}</td><td style="text-align:center; ${cssConfig.cellBorder} ${cssConfig.paddingTD}">${totalPointsThisBill > 0 ? '+' : ''}${totalPointsThisBill}</td></tr>`; 
@@ -367,7 +367,7 @@ const ExportPage = () => {
     ];
 
     let tableHead = ["STT", "Tên sản phẩm", "ĐVT"];
-    if (!hidePrice) { tableHead.push("Đơn giá", "SL", "Tiền hàng", "Thành tiền"); } else { tableHead.push("SL"); }
+    if (!hidePrice) { tableHead.push("Đơn giá", "SL", "Thành tiền"); } else { tableHead.push("SL"); }
     tableHead.push("Điểm quà");
     ws_data.push(tableHead);
 
@@ -387,7 +387,7 @@ const ExportPage = () => {
 
         let row = [ index + 1, d.product_name_backup, d.unit ];
         if (!hidePrice) {
-            row.push(d.export_price, d.quantity, rawAmount, subtotal);
+            row.push(d.export_price, d.quantity, subtotal);
         } else {
             row.push(d.quantity);
         }
@@ -397,7 +397,7 @@ const ExportPage = () => {
 
     let totalRow = ["", "TỔNG CỘNG", ""];
     if (!hidePrice) {
-        totalRow.push("", totalQty, totalRawPrice, totalSubtotal);
+        totalRow.push("", totalQty, totalSubtotal);
     } else {
         totalRow.push(totalQty);
     }
@@ -410,26 +410,25 @@ const ExportPage = () => {
       if (uniquePartnerDiscs.length === 1 && uniquePartnerDiscs[0] > 0) {
           partnerDiscText = `CHIẾT KHẤU (${uniquePartnerDiscs[0]}%)`;
       }
-      
-      ws_data.push(["", partnerDiscText, "", "", "", "", -totalCustomerDiscountAmount, ""]);
+      ws_data.push(["", partnerDiscText, "", "", "", -totalCustomerDiscountAmount, ""]);
     }
 
     ws_data.push([]);
     let footerInfo = [`Điểm còn gửi: ${oldPoints} + ${totalPoints} = ${oldPoints + totalPoints}`];
     if(!hidePrice) {
         const finalPayment = totalSubtotal - totalCustomerDiscountAmount;
-        ws_data.push([`Điểm còn gửi: ${oldPoints} + ${totalPoints} = ${oldPoints + totalPoints}`, "", "", "", "", "TỔNG THANH TOÁN:", finalPayment]);
+        ws_data.push([`Điểm còn gửi: ${oldPoints} + ${totalPoints} = ${oldPoints + totalPoints}`, "", "", "", "TỔNG THANH TOÁN:", finalPayment, ""]);
     } else {
         ws_data.push(footerInfo);
     }
     
     ws_data.push([]);
-    ws_data.push(["", "Người lập phiếu", "", "", "Người giao hàng", "", "Người nhận hàng"]);
+    ws_data.push(["", "Người lập phiếu", "", "Người giao hàng", "", "Người nhận hàng"]);
 
     const ws = XLSX.utils.aoa_to_sheet(ws_data);
     const range = XLSX.utils.decode_range(ws['!ref']);
     
-    const wscols = !hidePrice ? [ { wch: 5 }, { wch: 30 }, { wch: 8 }, { wch: 10 }, { wch: 6 }, { wch: 12 }, { wch: 12 }, { wch: 8 } ] : [ { wch: 5 }, { wch: 40 }, { wch: 10 }, { wch: 10 }, { wch: 10 } ];
+    const wscols = !hidePrice ? [ { wch: 5 }, { wch: 30 }, { wch: 8 }, { wch: 10 }, { wch: 6 }, { wch: 12 }, { wch: 8 } ] : [ { wch: 5 }, { wch: 40 }, { wch: 10 }, { wch: 10 }, { wch: 10 } ];
     ws['!cols'] = wscols;
 
     const wb = XLSX.utils.book_new();
@@ -519,7 +518,6 @@ const ExportPage = () => {
             selectedCustomerInfo?.brand_discounts?.find(d => d.brand === product.brand);
             const partnerDiscount = brandConfig ? brandConfig.discount_percent : 0;
             
-            // XÓA: Chiết khấu lũy tiến, chỉ sử dụng chiết khấu của đối tác
             const autoDiscount = partnerDiscount;
             
             return { 
