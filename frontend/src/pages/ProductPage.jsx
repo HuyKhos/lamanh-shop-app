@@ -27,7 +27,7 @@ const ProductPage = () => {
 
   // --- STATE TÌM KIẾM, LỌC & SERVER-SIDE PAGINATION ---
   const [searchTerm, setSearchTerm] = useState('');
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(''); 
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(''); // State mới giải quyết xung đột API
   
   const [filterStatus, setFilterStatus] = useState('all'); 
   const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' });
@@ -38,12 +38,12 @@ const ProductPage = () => {
   const [totalPages, setTotalPages] = useState(1);
 
   const [formData, setFormData] = useState({
-    _id: null, sku: '', name: '', brand: '', unit: '', import_price: '', export_price: '', gift_points: '', min_stock: 10
+    _id: null, sku: '', name: '', brand: '', unit: '', import_price: '', export_price: '', discount_percent: '', gift_points: '', min_stock: 10
   });
 
   const resetForm = () => {
     setFormData({
-      _id: null, sku: '', name: '', brand: '', unit: '', import_price: '', export_price: '', gift_points: '', min_stock: 10
+      _id: null, sku: '', name: '', brand: '', unit: '', import_price: '', export_price: '', discount_percent: '', gift_points: '', min_stock: 10
     });
     setIsEditMode(false);
   };
@@ -60,7 +60,7 @@ const ProductPage = () => {
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
-      setCurrentPage(1); 
+      setCurrentPage(1); // Tự động về trang 1 khi từ khóa tìm kiếm ổn định
     }, 500);
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm]);
@@ -72,7 +72,7 @@ const ProductPage = () => {
       const params = new URLSearchParams({
         page: currentPage,
         limit: itemsPerPage,
-        search: debouncedSearchTerm, 
+        search: debouncedSearchTerm, // Sử dụng debouncedSearchTerm
         status: filterStatus,
         sortKey: sortConfig.key || 'createdAt',
         sortDir: sortConfig.direction === 'asc' ? 'asc' : 'desc'
@@ -129,7 +129,7 @@ const ProductPage = () => {
       toast.info("Đang xử lý dữ liệu xuất Excel...");
       const params = new URLSearchParams({
         limit: 'all', 
-        search: debouncedSearchTerm, 
+        search: debouncedSearchTerm, // Dùng dữ liệu đã lọc ổn định
         status: filterStatus,
         sortKey: sortConfig.key || 'createdAt',
         sortDir: sortConfig.direction === 'asc' ? 'asc' : 'desc'
@@ -187,6 +187,7 @@ const ProductPage = () => {
         ...formData,
         import_price: Number(String(formData.import_price).replace(/[^0-9]/g, '')),
         export_price: Number(String(formData.export_price).replace(/[^0-9]/g, '')),
+        discount_percent: Number(formData.discount_percent),
         gift_points: Number(formData.gift_points),
         min_stock: Number(formData.min_stock),
       };
@@ -235,6 +236,7 @@ const ProductPage = () => {
       unit: product.unit || '',
       import_price: product.import_price?.toLocaleString('en-US') || '',
       export_price: product.export_price?.toLocaleString('en-US') || '',
+      discount_percent: product.discount_percent || '',
       gift_points: product.gift_points || '',
       min_stock: product.min_stock || 10
     });
@@ -290,7 +292,7 @@ const ProductPage = () => {
               {searchTerm && (<button onClick={() => setSearchTerm('')} className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={14} /></button>)}
             </div>
 
-            {/* Các Filter và Buttons */}
+            {/* Các Filter và Buttons (Giữ nguyên) */}
             <div className="relative">
               <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 pointer-events-none"><Filter size={16} /></div>
               <select className="pl-9 pr-8 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm appearance-none bg-white cursor-pointer hover:bg-gray-50" value={filterStatus} onChange={(e) => {setFilterStatus(e.target.value); setCurrentPage(1);}}>
@@ -337,6 +339,7 @@ const ProductPage = () => {
                   <th className="p-4 cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('unit')}><div className="flex items-center">Đơn vị {renderSortIcon('unit')}</div></th>
                   <th className="p-4 text-right cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('import_price')}><div className="flex items-center justify-end">Giá nhập {renderSortIcon('import_price')}</div></th>
                   <th className="p-4 text-right cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('export_price')}><div className="flex items-center justify-end">Giá bán {renderSortIcon('export_price')}</div></th>
+                  <th className="p-4 text-center cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('discount_percent')}><div className="flex items-center justify-center">CK(%) {renderSortIcon('discount_percent')}</div></th>
                   <th className="p-4 text-center cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('gift_points')}><div className="flex items-center justify-center">Điểm {renderSortIcon('gift_points')}</div></th>
                   <th className="p-4 text-center cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('current_stock')}><div className="flex items-center justify-center">Tồn kho {renderSortIcon('current_stock')}</div></th>
                   <th className="p-4 text-center w-28">Thao tác</th>
@@ -344,7 +347,7 @@ const ProductPage = () => {
               </thead>
               <tbody className="divide-y">
                 {!loading && products.length === 0 ? (
-                  <tr><td colSpan="9" className="p-8 text-center text-gray-500">Không tìm thấy sản phẩm.</td></tr>
+                  <tr><td colSpan="10" className="p-8 text-center text-gray-500">Không tìm thấy sản phẩm.</td></tr>
                 ) : (
                   products.map((p) => {
                     const minStock = p.min_stock || 10;
@@ -365,6 +368,7 @@ const ProductPage = () => {
                         <td className="p-4 text-gray-800">{p.unit || '-'}</td>
                         <td className="p-4 text-right text-gray-800">{p.import_price?.toLocaleString()}₫</td>
                         <td className="p-4 text-right text-gray-800">{p.export_price?.toLocaleString()}₫</td>
+                        <td className="p-4 text-center text-gray-800"><span className="text-black-600 px-2 py-1">{p.discount_percent}%</span></td>
                         <td className="p-4 text-center text-gray-800"><span className="px-2 py-1">{p.gift_points}</span></td>
                         <td className="p-4 text-center"><div className={`block w-[40px] h-8 leading-8 text-center mx-auto rounded-full text-sm font-bold shadow-sm ${badgeClass}`}>{p.current_stock}</div></td>
                         <td className="p-4 text-center"><button onClick={(e) => handleDeleteProduct(e, p._id, p.name)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-all"><Trash2 size={18} /></button></td>
@@ -424,7 +428,7 @@ const ProductPage = () => {
         </div>
       </div>
 
-      {/* --- MẪU BÁO CÁO --- */}
+      {/* --- MẪU BÁO CÁO (Giữ nguyên) --- */}
       <div id="report-template" ref={reportRef} className="fixed top-0 left-[-9999px] w-[650px] bg-white p-10 print:static print:left-0 print:w-full z-[-50]">
         <div className="text-center mb-6">
           <h1 className="text-3xl font-bold uppercase mb-2 text-black">BÁO CÁO TỒN KHO</h1>
@@ -454,7 +458,7 @@ const ProductPage = () => {
         </table>
       </div>
 
-      {/* MODAL FORM */}
+      {/* MODAL FORM (Giữ nguyên) */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 backdrop-blur-sm">
            <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl p-6 transform scale-100" style={{ animation: isClosing ? 'fadeOut 0.1s ease-out forwards' : 'fadeIn 0.1s ease-out forwards' }}>
@@ -483,7 +487,8 @@ const ProductPage = () => {
                       <div><label className="block text-sm font-medium text-gray-700 mb-1">Giá nhập</label><input type="text" className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 outline-none" value={formData.import_price} onChange={(e) => handlePriceChange('import_price', e.target.value)} /></div>
                       <div><label className="block text-sm font-medium text-gray-700 mb-1">Giá bán</label><input type="text" className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 outline-none" value={formData.export_price} onChange={(e) => handlePriceChange('export_price', e.target.value)} /></div>
                     </div>
-                    <div className="grid grid-cols-1 gap-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div><label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1"><Tag size={16} /> Chiết khấu (%)</label><input type="number" className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 outline-none" value={formData.discount_percent} onChange={(e) => setFormData({...formData, discount_percent: e.target.value})} /></div>
                       <div><label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1"><Gift size={16} /> Điểm</label><input type="number" className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 outline-none" value={formData.gift_points} onChange={(e) => setFormData({...formData, gift_points: e.target.value})} /></div>
                     </div>
                   </div>
