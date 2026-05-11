@@ -25,16 +25,21 @@ const exportSchema = new mongoose.Schema({
   details: [{
     product_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
     
-    // GIỮ NGUYÊN CODE CŨ CỦA BẠN
     sku: String,          // Mã SP
     unit: String,         // Đơn vị
-    gift_points: Number,  // <--- QUAN TRỌNG: Lưu điểm vào đây
+    gift_points: Number,  // Lưu điểm
     
     product_name_backup: String,
     quantity: Number,
     import_price: Number, // Lưu giá vốn tại thời điểm xuất
     export_price: Number,
-    discount: Number,
+    discount: Number,     // Chiết khấu tổng (Giữ lại để tương thích phiếu cũ)
+    
+    // --- CHỈ GIỮ LẠI CHIẾT KHẤU ĐỐI TÁC (BRAND DISCOUNT) ---
+    // Đã xóa promo_discount tại đây
+    partner_discount: { type: Number, default: 0 }, // Chiết khấu riêng của khách hàng (%)
+    // --------------------------------------------------
+
     total: Number,
     profit: Number
   }]
