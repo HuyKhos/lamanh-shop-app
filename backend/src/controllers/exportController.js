@@ -3,6 +3,7 @@ import ExportReceipt from '../models/exportModel.js';
 import Product from '../models/productModel.js';
 import Partner from '../models/partnerModel.js';
 import Counter from '../models/counterModel.js';
+import InventoryHistory from '../models/inventoryHistoryModel.js';
 
 // --- HÀM SINH MÃ ---
 export const generateExportCode = async (session = null) => {
@@ -32,6 +33,9 @@ const createExport = async (req, res) => {
     const customer = await Partner.findById(customer_id).session(session);
     if (!customer) throw new Error('Khách hàng không tồn tại');
 
+    // TẠO MÃ PHIẾU TRƯỚC ĐỂ LƯU VÀO THẺ KHO
+    const code = await generateExportCode(session);
+
     let totalPointsChange = 0;
     let finalTotalAmount = 0;
     const enrichedDetails = [];
@@ -49,6 +53,7 @@ const createExport = async (req, res) => {
       const appliedPrice = basePrice * (1 - partnerDiscount / 100);
       const lineTotal = Math.round(appliedPrice * item.quantity);
 
+      // 3. Cập nhật tồn kho an toàn (Chống âm kho)
       const productUpdate = await Product.findOneAndUpdate(
         { _id: item.product_id, current_stock: { $gte: item.quantity } },
         { $inc: { current_stock: -item.quantity } },
@@ -56,6 +61,17 @@ const createExport = async (req, res) => {
       );
       if (!productUpdate) throw new Error(`Sản phẩm ${product.name} không đủ hàng.`);
       
+      // 4. GHI LỊCH SỬ THẺ KHO (Tự động tính tồn cũ từ tồn mới để đảm bảo chính xác 100%)
+      await InventoryHistory.create([{
+        product_id: item.product_id,
+        type: 'EXPORT',
+        reference_code: code,
+        change_quantity: -item.quantity, // Xuất kho là số Âm
+        previous_stock: productUpdate.current_stock + item.quantity, 
+        new_stock: productUpdate.current_stock,
+        note: `Xuất bán hàng (Phiếu: ${code})`
+      }], { session });
+
       totalPointsChange += (product.gift_points || 0) * item.quantity;
       finalTotalAmount += lineTotal;
 
@@ -63,8 +79,8 @@ const createExport = async (req, res) => {
         ...item,
         brand: product.brand,
         export_price: basePrice, 
-        discount: partnerDiscount, // Giữ lại discount cho các form cũ
-        partner_discount: partnerDiscount, // Lưu chiết khấu đối tác
+        discount: partnerDiscount, 
+        partner_discount: partnerDiscount, 
         total: lineTotal,
         import_price: product.import_price || 0,
         profit: lineTotal - ((product.import_price || 0) * item.quantity)
@@ -81,7 +97,6 @@ const createExport = async (req, res) => {
       );
     }
 
-    const code = await generateExportCode(session);
     const exportReceipt = new ExportReceipt({
       code, customer_id, total_amount: finalTotalAmount, note, 
       details: enrichedDetails, payment_due_date,
@@ -119,13 +134,32 @@ const deleteExport = async (req, res) => {
   session.startTransaction();
 
   try {
-    const receipt = await ExportReceipt.findById(req.params.id).session(session);
-    if (!receipt) throw new Error('Không tìm thấy phiếu');
+    // 1. DÙNG KỸ THUẬT XÓA NGUYÊN TỬ (Chống lỗi click đúp gây cộng tồn kho nhiều lần)
+    const receipt = await ExportReceipt.findByIdAndDelete(req.params.id).session(session);
+    if (!receipt) throw new Error('Không tìm thấy phiếu hoặc phiếu đã bị xóa');
 
     for (const item of receipt.details) {
-      await Product.findByIdAndUpdate(
-        item.product_id, { $inc: { current_stock: item.quantity } }, { session }
-      );
+      if (item.product_id) {
+        // Cập nhật lại tồn kho
+        const productAfter = await Product.findByIdAndUpdate(
+          item.product_id, 
+          { $inc: { current_stock: item.quantity } }, 
+          { session, new: true }
+        );
+
+        if (productAfter) {
+          // GHI LỊCH SỬ THẺ KHO KHI HOÀN HÀNG
+          await InventoryHistory.create([{
+            product_id: item.product_id,
+            type: 'DELETE_EXPORT',
+            reference_code: receipt.code,
+            change_quantity: item.quantity, // Hoàn kho là số Dương
+            previous_stock: productAfter.current_stock - item.quantity,
+            new_stock: productAfter.current_stock,
+            note: `Hoàn hàng do xóa phiếu xuất ${receipt.code}`
+          }], { session });
+        }
+      }
     }
 
     let pointsToRevert = 0;
@@ -141,8 +175,6 @@ const deleteExport = async (req, res) => {
       );
     }
 
-    await ExportReceipt.deleteOne({ _id: receipt._id }).session(session);
-    
     await session.commitTransaction();
     res.json({ message: 'Đã xóa phiếu xuất và hoàn tác dữ liệu thành công.' });
 

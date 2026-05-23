@@ -20,4 +20,6 @@ router.route('/:id')
   .put(updateProduct)    // Method PUT để sửa
   .delete(deleteProduct); // Method DELETE để xóa
 
+router.get('/:id/history', getProductHistory);
+
 export default router;

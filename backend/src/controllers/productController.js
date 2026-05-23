@@ -1,6 +1,7 @@
 import Product from '../models/productModel.js';
 import ImportReceipt from '../models/importModel.js';
 import ExportReceipt from '../models/exportModel.js';
+import InventoryHistory from '../models/inventoryHistoryModel.js';
 
 // @desc    Tạo sản phẩm mới
 const createProduct = async (req, res) => {
@@ -8,7 +9,7 @@ const createProduct = async (req, res) => {
     const { 
       sku, name, brand, unit,
       import_price, export_price, 
-      discount_percent, gift_points, min_stock 
+      gift_points, min_stock // Đã xóa discount_percent
     } = req.body;
 
     if (!name) {
@@ -18,7 +19,7 @@ const createProduct = async (req, res) => {
     const product = new Product({
       sku, name, brand, unit,
       import_price, export_price,
-      discount_percent, gift_points, min_stock
+      gift_points, min_stock // Đã xóa discount_percent
     });
 
     const createdProduct = await product.save();
@@ -38,7 +39,7 @@ const updateProduct = async (req, res) => {
     const { 
       sku, name, brand, unit,
       import_price, export_price, 
-      discount_percent, gift_points, min_stock
+      gift_points, min_stock // Đã xóa discount_percent
     } = req.body;
 
     const product = await Product.findById(req.params.id);
@@ -50,7 +51,7 @@ const updateProduct = async (req, res) => {
       product.unit = unit || product.unit;
       product.import_price = import_price !== undefined ? import_price : product.import_price;
       product.export_price = export_price !== undefined ? export_price : product.export_price;
-      product.discount_percent = discount_percent !== undefined ? discount_percent : product.discount_percent;
+      // Đã xóa gán product.discount_percent
       product.gift_points = gift_points !== undefined ? gift_points : product.gift_points;
       product.min_stock = min_stock !== undefined ? min_stock : product.min_stock;
 
@@ -177,6 +178,22 @@ const deleteProduct = async (req, res) => {
 
   } catch (error) {
     res.status(500).json({ message: 'Lỗi xóa: ' + error.message });
+  }
+};
+
+// --- API LẤY LỊCH SỬ THẺ KHO CỦA SẢN PHẨM ---
+export const getProductHistory = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Lấy lịch sử, sắp xếp mới nhất lên đầu
+    const history = await InventoryHistory.find({ product_id: id })
+      .sort({ createdAt: -1 })
+      .limit(100); // Tạm thời lấy 100 giao dịch gần nhất cho nhẹ
+
+    res.status(200).json(history);
+  } catch (error) {
+    res.status(500).json({ message: 'Lỗi tải lịch sử kho: ' + error.message });
   }
 };
 

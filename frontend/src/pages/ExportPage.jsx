@@ -1107,7 +1107,8 @@ const handleKeyDown = (e) => {
                 
                 {!isViewMode && (
                   <button 
-                      onClick={handleSaveExport} 
+                      onClick={handleSaveExport}
+                      disabled={isSubmitting} 
                       className={`px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold flex items-center gap-2 shadow-lg transition-colors ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                       {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />} 
