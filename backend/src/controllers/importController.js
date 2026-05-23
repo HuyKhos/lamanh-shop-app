@@ -50,7 +50,6 @@ const createImport = async (req, res) => {
         change_quantity: item.quantity, // Nhập kho là số Dương
         previous_stock: updatedProduct.current_stock - item.quantity, // Tồn cũ = Tồn mới - Lượng vừa nhập
         new_stock: updatedProduct.current_stock,
-        note: `Nhập kho (Phiếu: ${code})`
       }], { session });
     }
 
@@ -103,7 +102,6 @@ const deleteImport = async (req, res) => {
             change_quantity: -item.quantity, // Rút lại hàng là số Âm
             previous_stock: productAfter.current_stock + item.quantity,
             new_stock: productAfter.current_stock,
-            note: `Hủy nhập kho do xóa phiếu ${receipt.code}`
           }], { session });
         }
       }

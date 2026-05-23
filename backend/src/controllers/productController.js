@@ -185,15 +185,23 @@ const deleteProduct = async (req, res) => {
 export const getProductHistory = async (req, res) => {
   try {
     const { id } = req.params;
-    
-    // Lấy lịch sử, sắp xếp mới nhất lên đầu
+    const page = parseInt(req.query.page) || 1;
+    const limit = 10; // Chỉ lấy 10 dòng mỗi trang
+    const skip = (page - 1) * limit;
+
     const history = await InventoryHistory.find({ product_id: id })
       .sort({ createdAt: -1 })
-      .limit(100); // Tạm thời lấy 100 giao dịch gần nhất cho nhẹ
+      .skip(skip)
+      .limit(limit);
 
-    res.status(200).json(history);
+    const total = await InventoryHistory.countDocuments({ product_id: id });
+
+    res.status(200).json({
+      data: history,
+      totalPages: Math.ceil(total / limit)
+    });
   } catch (error) {
-    res.status(500).json({ message: 'Lỗi tải lịch sử kho: ' + error.message });
+    res.status(500).json({ message: 'Lỗi: ' + error.message });
   }
 };
 

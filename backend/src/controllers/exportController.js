@@ -69,7 +69,6 @@ const createExport = async (req, res) => {
         change_quantity: -item.quantity, // Xuất kho là số Âm
         previous_stock: productUpdate.current_stock + item.quantity, 
         new_stock: productUpdate.current_stock,
-        note: `Xuất bán hàng (Phiếu: ${code})`
       }], { session });
 
       totalPointsChange += (product.gift_points || 0) * item.quantity;
@@ -156,7 +155,6 @@ const deleteExport = async (req, res) => {
             change_quantity: item.quantity, // Hoàn kho là số Dương
             previous_stock: productAfter.current_stock - item.quantity,
             new_stock: productAfter.current_stock,
-            note: `Hoàn hàng do xóa phiếu xuất ${receipt.code}`
           }], { session });
         }
       }
