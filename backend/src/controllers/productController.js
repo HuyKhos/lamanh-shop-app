@@ -185,18 +185,14 @@ const deleteProduct = async (req, res) => {
 export const getProductHistory = async (req, res) => {
   try {
     const { id } = req.params;
-    // Tạm thời bỏ qua phân trang để kiểm tra xem có dữ liệu không
     const history = await InventoryHistory.find({ product_id: id })
       .sort({ createdAt: -1 })
       .lean();
 
-    // Trả về định dạng mà Frontend dễ đọc nhất
-    res.status(200).json({
-      success: true,
-      data: history // Đây là mảng dữ liệu
-    });
+    // TRẢ VỀ MẢNG TRỰC TIẾP (Giống lúc chưa bị lỗi S.map)
+    res.status(200).json(history); 
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({ message: 'Lỗi: ' + error.message });
   }
 };
 
