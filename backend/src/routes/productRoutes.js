@@ -1,25 +1,26 @@
 import express from 'express';
-// Nhớ import thêm updateProduct và deleteProduct từ controller
+// 1. IMPORT ĐẦY ĐỦ CÁC HÀM TỪ CONTROLLER
 import { 
   createProduct, 
   getProducts, 
   updateProduct, 
-  deleteProduct 
+  deleteProduct,
+  getProductHistory // <--- BẠN THIẾU DÒNG NÀY
 } from '../controllers/productController.js';
 
 const router = express.Router();
 
-// Đường dẫn gốc: /api/products (Lấy danh sách & Tạo mới)
-router.route('/')
-  .get(getProducts)
-  .post(createProduct);
+// 2. ĐƯỜNG DẪN CÓ ID CỤ THỂ
+// Lưu ý: Đặt route có tham số đặc biệt (history) TRƯỚC route tổng quát (/:id)
+router.get('/:id/history', getProductHistory);
 
-// Đường dẫn có ID: /api/products/:id (Sửa & Xóa theo ID cụ thể)
-// --- ĐÂY LÀ PHẦN BẠN CẦN THÊM ---
 router.route('/:id')
   .put(updateProduct)    // Method PUT để sửa
   .delete(deleteProduct); // Method DELETE để xóa
 
-router.get('/:id/history', getProductHistory);
+// 3. ĐƯỜNG DẪN GỐC: /api/products
+router.route('/')
+  .get(getProducts)
+  .post(createProduct);
 
 export default router;
