@@ -243,18 +243,21 @@ const ProductPage = () => {
     try {
       const res = await axiosClient.get(`/products/${product._id}/history`);
       
-      // SỬA Ở ĐÂY: Nếu Backend trả về object { data: [], totalPages: 1 }
-      // Thì ta phải setHistoryData là res.data
-      if (res && Array.isArray(res.data)) {
+      // Kiểm tra dữ liệu trả về:
+      // Nếu Backend trả về { data: [...] } thì ta lấy res.data.data
+      if (res && res.data && Array.isArray(res.data.data)) {
+        setHistoryData(res.data.data);
+      } 
+      // Trường hợp dự phòng nếu API không có phân trang
+      else if (res && Array.isArray(res.data)) {
         setHistoryData(res.data);
-      } else if (Array.isArray(res)) {
-        setHistoryData(res);
       } else {
-        setHistoryData([]); // Fallback nếu dữ liệu không phải mảng
+        setHistoryData([]); 
       }
     } catch (error) {
+      console.error(error);
       toast.error('Không tải được lịch sử tồn kho');
-      setHistoryData([]); // Tránh lỗi map khi API lỗi
+      setHistoryData([]);
     } finally {
       setLoadingHistory(false);
     }
@@ -525,20 +528,24 @@ const ProductPage = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {historyData.map(item => (
-                    <tr key={item._id} className="border-b">
-                      <td className="p-3 text-gray-600">{new Date(item.createdAt).toLocaleDateString('vi-VN')}</td>
-                      <td className="p-3 font-medium">
-                        {item.type === 'IMPORT' ? 'Nhập kho' : item.type === 'EXPORT' ? 'Xuất kho' : 'Xóa phiếu'}
-                      </td>
-                      <td className="p-3 font-mono text-blue-600">{item.reference_code}</td>
-                      <td className="p-3 text-right text-gray-500">{item.previous_stock}</td>
-                      <td className={`p-3 text-right font-bold ${item.change_quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {item.change_quantity > 0 ? '+' : ''}{item.change_quantity}
-                      </td>
-                      <td className="p-3 text-right font-bold">{item.new_stock}</td>
+                  {Array.isArray(historyData) && historyData.length > 0 ? (
+                    historyData.map(item => (
+                      <tr key={item._id} className="border-b">
+                        <td className="p-3 text-gray-600">{new Date(item.createdAt).toLocaleDateString('vi-VN')}</td>
+                        <td className="p-3 font-medium">{getHistoryTypeLabel(item.type)}</td>
+                        <td className="p-3 font-mono text-blue-600">{item.reference_code}</td>
+                        <td className="p-3 text-right text-gray-500">{item.previous_stock}</td>
+                        <td className={`p-3 text-right font-bold ${item.change_quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {item.change_quantity > 0 ? '+' : ''}{item.change_quantity}
+                        </td>
+                        <td className="p-3 text-right font-bold">{item.new_stock}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="6" className="p-4 text-center text-gray-400">Không có dữ liệu lịch sử</td>
                     </tr>
-                  ))}
+                  )}
                 </tbody>
               </table>
             </div>
