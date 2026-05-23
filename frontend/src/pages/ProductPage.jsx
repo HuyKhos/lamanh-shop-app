@@ -4,7 +4,7 @@ import {
   Plus, Search, X, Barcode, Tag, Gift, FileText, Trash2, Menu, Pencil, 
   AlertTriangle, Filter, ArrowUpDown, ArrowUp, ArrowDown,
   Download, FileSpreadsheet, Image as ImageIcon, ChevronDown, 
-  ChevronLeft, ChevronRight, Clock // Đã thêm icon Clock cho Lịch sử
+  ChevronLeft, ChevronRight, Clock 
 } from 'lucide-react'; 
 import axiosClient from '../api/axiosClient';
 import { toast } from 'react-toastify';
@@ -13,7 +13,7 @@ import html2canvas from 'html2canvas';
 import CreatableSelect from 'react-select/creatable';
 
 const ProductPage = () => {
-  const { refreshFlags, updateCache } = useOutletContext();
+  const { refreshFlags } = useOutletContext();
   const { isExpanded, setIsExpanded } = useOutletContext();
   const reportRef = useRef(null); 
   
@@ -34,10 +34,8 @@ const ProductPage = () => {
   // --- STATE TÌM KIẾM, LỌC & SERVER-SIDE PAGINATION ---
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(''); 
-  
   const [filterStatus, setFilterStatus] = useState('all'); 
   const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' });
-  
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10); 
   const [totalItems, setTotalItems] = useState(0);
@@ -48,9 +46,7 @@ const ProductPage = () => {
   });
 
   const resetForm = () => {
-    setFormData({
-      _id: null, sku: '', name: '', brand: '', unit: '', import_price: '', export_price: '', gift_points: '', min_stock: 10
-    });
+    setFormData({ _id: null, sku: '', name: '', brand: '', unit: '', import_price: '', export_price: '', gift_points: '', min_stock: 10 });
     setIsEditMode(false);
   };
 
@@ -58,13 +54,13 @@ const ProductPage = () => {
     setIsClosing(true);
     setTimeout(() => {
       setShowModal(false);
-      setShowHistoryModal(false); // Thêm đóng lịch sử
+      setShowHistoryModal(false);
       setIsClosing(false);
       setSelectedProduct(null);
+      setHistoryData([]);
     }, 100); 
   };
 
-  // --- QUẢN LÝ DEBOUNCE (CHỈ CẬP NHẬT STATE, KHÔNG GỌI API) ---
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
@@ -73,7 +69,7 @@ const ProductPage = () => {
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm]);
 
-  // --- HÀM GỌI API (SERVER-SIDE) ---
+  // --- HÀM GỌI API ---
   const fetchProducts = useCallback(async () => {
     try {
       setLoading(true);
@@ -88,27 +84,32 @@ const ProductPage = () => {
 
       const res = await axiosClient.get(`/products?${params.toString()}`);
       
-      if (res.pagination) {
-          setProducts(res.data);
-          setTotalItems(res.pagination.totalItems);
-          setTotalPages(res.pagination.totalPages);
+      // Hỗ trợ cả trường hợp res trả về trực tiếp hoặc bọc trong res.data
+      const result = res?.pagination ? res : res?.data;
+
+      if (result && result.pagination) {
+          setProducts(result.data || []);
+          setTotalItems(result.pagination.totalItems);
+          setTotalPages(result.pagination.totalPages);
+      } else if (Array.isArray(res)) {
+          setProducts(res);
+          setTotalPages(1);
       }
     } catch (error) {
       toast.error('Lỗi tải danh sách sản phẩm');
-      console.error(error);
     } finally {
       setLoading(false);
     }
   }, [currentPage, itemsPerPage, debouncedSearchTerm, filterStatus, sortConfig]);
 
-  // --- GỌI API TẬP TRUNG TẠI MỘT NƠI DUY NHẤT ---
+  // Quan trọng: useEffect phải lắng nghe sự thay đổi của trang và limit
   useEffect(() => {
     fetchProducts();
-  }, [fetchProducts, refreshFlags.products]);
+  }, [fetchProducts, refreshFlags.products, currentPage, itemsPerPage]);
 
   useEffect(() => {
-    if (!showModal) resetForm();
-  }, [showModal]);
+    if (!showModal && !showHistoryModal) resetForm();
+  }, [showModal, showHistoryModal]);
 
   const handleSort = (key) => {
     let direction = 'asc';
@@ -135,16 +136,9 @@ const ProductPage = () => {
   const handleExportExcel = async () => {
     try {
       toast.info("Đang xử lý dữ liệu xuất Excel...");
-      const params = new URLSearchParams({
-        limit: 'all', 
-        search: debouncedSearchTerm, 
-        status: filterStatus,
-        sortKey: sortConfig.key || 'createdAt',
-        sortDir: sortConfig.direction === 'asc' ? 'asc' : 'desc'
-      });
-      
-      const allData = await axiosClient.get(`/products?${params.toString()}`);
-      const exportList = allData.data ? allData.data : allData;
+      const params = new URLSearchParams({ limit: 'all', search: debouncedSearchTerm, status: filterStatus });
+      const res = await axiosClient.get(`/products?${params.toString()}`);
+      const exportList = res.data || res;
 
       const dataToExport = exportList.map(p => ({
         'Tên sản phẩm': p.name,
@@ -155,34 +149,19 @@ const ProductPage = () => {
       }));
       
       const ws = XLSX.utils.json_to_sheet(dataToExport);
-      const wscols = [{ wch: 40 }, { wch: 20 }, { wch: 10 }, { wch: 10 }, { wch: 10 }];
-      ws['!cols'] = wscols;
+      ws['!cols'] = [{ wch: 40 }, { wch: 20 }, { wch: 10 }, { wch: 10 }, { wch: 10 }];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "BaoCaoTonKho");
-      XLSX.writeFile(wb, `Bao_Cao_Ton_Kho_${new Date().toLocaleDateString('vi-VN').replace(/\//g, '-')}.xlsx`);
-    } catch(err) {
-      toast.error("Lỗi xuất Excel");
-    } finally {
-      setShowExportMenu(false);
-    }
+      XLSX.writeFile(wb, `Ton_Kho_${new Date().getTime()}.xlsx`);
+    } catch(err) { toast.error("Lỗi xuất Excel"); } finally { setShowExportMenu(false); }
   };
 
   const handleExportImage = async () => {
     if (reportRef.current) {
-      const canvas = await html2canvas(reportRef.current, {
-        scale: 2, 
-        useCORS: true,
-        onclone: (clonedDoc) => {
-          const el = clonedDoc.getElementById('report-template');
-          if (el) {
-            el.style.left = '0px'; el.style.top = '0px'; el.style.position = 'absolute'; el.style.opacity = '1'; el.style.zIndex = '9999';
-          }
-        }
-      });
-      const image = canvas.toDataURL("image/png");
+      const canvas = await html2canvas(reportRef.current, { scale: 2, useCORS: true });
       const link = document.createElement("a");
-      link.href = image;
-      link.download = `Bao_Cao_Ton_Kho_${new Date().getTime()}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.download = `Bao_Cao_Ton_Kho.png`;
       link.click();
       setShowExportMenu(false);
     }
@@ -198,43 +177,21 @@ const ProductPage = () => {
         gift_points: Number(formData.gift_points),
         min_stock: Number(formData.min_stock),
       };
-
-      if (isEditMode && formData._id) {
-        await axiosClient.put(`/products/${formData._id}`, payload);
-        toast.success('Cập nhật thành công! ✏️');
-      } else {
-        await axiosClient.post('/products', payload);
-        toast.success('Thêm sản phẩm thành công! 🎉');
-      }
-      
-      handleCloseModal();
-      fetchProducts(); 
-    } catch (error) {
-      const message = error.response?.data?.message || error.message;
-      toast.error(`Lỗi: ${message}`);
-    }
+      if (isEditMode) { await axiosClient.put(`/products/${formData._id}`, payload); toast.success('Cập nhật thành công!'); }
+      else { await axiosClient.post('/products', payload); toast.success('Thêm thành công!'); }
+      handleCloseModal(); fetchProducts(); 
+    } catch (error) { toast.error(`Lỗi: ${error.response?.data?.message || error.message}`); }
   };
 
   const handleDeleteProduct = async (e, id, name) => {
     e.stopPropagation(); 
-    if (window.confirm(`Bạn có chắc muốn xóa sản phẩm "${name}" không?`)) {
-      try {
-        await axiosClient.delete(`/products/${id}`);
-        toast.success('Đã xóa sản phẩm');
-        
-        if (products.length === 1 && currentPage > 1) {
-            setCurrentPage(currentPage - 1);
-        } else {
-            fetchProducts();
-        }
-      } catch (error) {
-        const msg = error.response?.data?.message || error.message;
-        toast.error('Lỗi: ' + msg);
-      }
+    if (window.confirm(`Xóa sản phẩm "${name}"?`)) {
+      try { await axiosClient.delete(`/products/${id}`); toast.success('Đã xóa'); fetchProducts(); }
+      catch (error) { toast.error('Lỗi: ' + (error.response?.data?.message || error.message)); }
     }
   };
 
-  // --- HÀM MỞ THẺ KHO ---
+  // --- HÀM MỞ THẺ KHO (ĐÃ SỬA LỖI S.MAP) ---
   const handleViewHistory = async (e, product) => {
     e.stopPropagation();
     setSelectedProduct(product);
@@ -242,56 +199,34 @@ const ProductPage = () => {
     setLoadingHistory(true);
     try {
       const res = await axiosClient.get(`/products/${product._id}/history`);
-      
-      // BACKEND của bạn trả về: { success: true, data: [...], totalPages: X }
-      // AXIOS bọc kết quả đó trong trường .data
-      // Nên đường dẫn đúng phải là res.data (nếu axiosClient đã bóc tách) 
-      // hoặc res.data.data (nếu axiosClient chưa bóc tách)
-      
-      const actualData = res.data?.data || res.data || res || [];
+      // Dò tìm mảng dữ liệu trong res
+      const actualData = res?.data?.data || res?.data || res || [];
       setHistoryData(Array.isArray(actualData) ? actualData : []);
-  
     } catch (error) {
-      console.error("Lỗi tải thẻ kho:", error);
-      toast.error('Không tải được lịch sử tồn kho');
-      setHistoryData([]); 
-    } finally {
-      setLoadingHistory(false);
-    }
+      toast.error('Không tải được lịch sử');
+      setHistoryData([]);
+    } finally { setLoadingHistory(false); }
   };
 
-  // --- FORMAT LOẠI GIAO DỊCH LỊCH SỬ ---
   const getHistoryTypeLabel = (type) => {
     switch (type) {
       case 'IMPORT': return <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-semibold">Nhập kho</span>;
       case 'EXPORT': return <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-semibold">Xuất kho</span>;
-      case 'DELETE_IMPORT': return <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-semibold">Xóa phiếu nhập</span>;
-      case 'DELETE_EXPORT': return <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs font-semibold">Khách trả hàng</span>;
+      case 'DELETE_IMPORT': 
+      case 'DELETE_EXPORT': return <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-semibold">Xóa phiếu</span>;
       case 'UPDATE_MANUAL': return <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs font-semibold">Sửa thủ công</span>;
       default: return type;
     }
   };
 
   const handleRowClick = (product) => {
-    setFormData({
-      _id: product._id,
-      sku: product.sku || '',
-      name: product.name,
-      brand: product.brand || '',
-      unit: product.unit || '',
-      import_price: product.import_price?.toLocaleString('en-US') || '',
-      export_price: product.export_price?.toLocaleString('en-US') || '',
-      gift_points: product.gift_points || '',
-      min_stock: product.min_stock || 10
-    });
-    setIsEditMode(true);
-    setShowModal(true);
+    setFormData({ ...product, import_price: product.import_price?.toLocaleString(), export_price: product.export_price?.toLocaleString() });
+    setIsEditMode(true); setShowModal(true);
   };
 
   const handlePriceChange = (field, value) => {
     const rawValue = value.replace(/[^0-9]/g, '');
-    const formattedValue = rawValue ? Number(rawValue).toLocaleString('en-US') : '';
-    setFormData({ ...formData, [field]: formattedValue });
+    setFormData({ ...formData, [field]: rawValue ? Number(rawValue).toLocaleString() : '' });
   };
 
   const getStockBadgeColor = (current, min) => {
@@ -302,322 +237,165 @@ const ProductPage = () => {
 
   return (
     <div className="p-2 pb-10">
-      <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; transform: scale(0.95); }
-          to { opacity: 1; transform: scale(1); }
-        }
-        @keyframes fadeOut {
-          from { opacity: 1; transform: scale(1); }
-          to { opacity: 0; transform: scale(0.95); }
-        }
-      `}</style>
+      <style>{`@keyframes fadeIn {from {opacity: 0; transform: scale(0.95);} to {opacity: 1; transform: scale(1);}} @keyframes fadeOut {from {opacity: 1; transform: scale(1);} to {opacity: 0; transform: scale(0.95);}}`}</style>
 
       <div className="print:hidden"> 
         <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
           <div className="flex items-center gap-3 self-start md:self-center">
-              <button onClick={() => setIsExpanded(!isExpanded)} className="p-2 rounded-lg hover:bg-gray-100 text-black-600 transition-colors">
-                  <Menu size={24} />
-              </button>
-              <h1 className="text-2xl font-bold text-gray-800 whitespace-nowrap">Sản phẩm</h1>
+              <button onClick={() => setIsExpanded(!isExpanded)} className="p-2 rounded-lg hover:bg-gray-100 text-black-600 transition-colors"><Menu size={24} /></button>
+              <h1 className="text-2xl font-bold text-gray-800">Sản phẩm</h1>
           </div>
-          
           <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-            {/* Thanh tìm kiếm */}
             <div className="relative flex-1 md:w-64">
               <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-              <input 
-                type="text" 
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm" 
-                placeholder="Tìm tên, mã SP hoặc Nhãn hàng..." 
-                value={searchTerm} 
-                onChange={(e) => setSearchTerm(e.target.value)} 
-              />
-              {searchTerm && (<button onClick={() => setSearchTerm('')} className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={14} /></button>)}
+              <input type="text" className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Tìm kiếm..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
             </div>
-
-            {/* Các Filter và Buttons */}
-            <div className="relative">
-              <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 pointer-events-none"><Filter size={16} /></div>
-              <select className="pl-9 pr-8 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm appearance-none bg-white cursor-pointer hover:bg-gray-50" value={filterStatus} onChange={(e) => {setFilterStatus(e.target.value); setCurrentPage(1);}}>
+            <select className="pl-3 pr-8 py-2 border border-gray-300 rounded-lg text-sm bg-white" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
                 <option value="all">Tất cả kho</option>
-                <option value="in_stock">✅ Còn hàng</option>
-                <option value="out_of_stock">⛔ Hết hàng</option>
-              </select>
-            </div>
-
+                <option value="in_stock">Còn hàng</option>
+                <option value="out_of_stock">Hết hàng</option>
+            </select>
             <div className="relative">
-              <button onClick={() => setShowExportMenu(!showExportMenu)} className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg flex items-center gap-2 font-medium shadow-sm transition-colors text-sm">
-                <Download size={18} /><span className="hidden sm:inline">Xuất file</span><ChevronDown size={14} />
-              </button>
+              <button onClick={() => setShowExportMenu(!showExportMenu)} className="bg-white border border-gray-300 px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium"><Download size={18} /> Xuất file <ChevronDown size={14} /></button>
               {showExportMenu && (
-                <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden">
-                  <button onClick={handleExportExcel} className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center gap-2 text-sm text-gray-700"><FileSpreadsheet size={16} className="text-green-600" /> Xuất Excel</button>
-                  <button onClick={handleExportImage} className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center gap-2 text-sm text-gray-700 border-t border-gray-100"><ImageIcon size={16} className="text-blue-600" /> Lưu ảnh (PNG)</button>
+                <div className="absolute right-0 mt-2 w-48 bg-white border rounded-xl shadow-lg z-20">
+                  <button onClick={handleExportExcel} className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center gap-2 text-sm"><FileSpreadsheet size={16} className="text-green-600" /> Excel</button>
+                  <button onClick={handleExportImage} className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center gap-2 text-sm border-t"><ImageIcon size={16} className="text-blue-600" /> Ảnh (PNG)</button>
                 </div>
               )}
-              {showExportMenu && (<div className="fixed inset-0 z-10" onClick={() => setShowExportMenu(false)}></div>)}
             </div>
-
-            <button onClick={() => setShowModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium shadow-sm transition-colors whitespace-nowrap">
-              <Plus size={20} /> <span className="hidden sm:inline">Thêm mới</span>
-            </button>
+            <button onClick={() => setShowModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium"><Plus size={20} /> Thêm mới</button>
           </div>
         </div>
 
-        {/* BẢNG DỮ LIỆU */}
         <div className="bg-white rounded-xl shadow-sm border overflow-hidden relative min-h-[400px]">
-          {loading && (
-             <div className="absolute inset-0 bg-white bg-opacity-60 z-10 flex items-center justify-center">
-                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-             </div>
-          )}
-
+          {loading && <div className="absolute inset-0 bg-white/60 z-10 flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full text-left">
               <thead className="bg-blue-50 text-gray-600 font-semibold text-sm border-b">
                 <tr>
-                  <th className="p-4 cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('sku')}><div className="flex items-center">Mã SP {renderSortIcon('sku')}</div></th>
-                  <th className="p-4 cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('name')}><div className="flex items-center">Tên sản phẩm {renderSortIcon('name')}</div></th>
-                  <th className="p-4 cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('brand')}><div className="flex items-center">Nhãn hàng {renderSortIcon('brand')}</div></th>
-                  <th className="p-4 cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('unit')}><div className="flex items-center">Đơn vị {renderSortIcon('unit')}</div></th>
-                  <th className="p-4 text-right cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('import_price')}><div className="flex items-center justify-end">Giá nhập {renderSortIcon('import_price')}</div></th>
-                  <th className="p-4 text-right cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('export_price')}><div className="flex items-center justify-end">Giá bán {renderSortIcon('export_price')}</div></th>
-                  <th className="p-4 text-center cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('gift_points')}><div className="flex items-center justify-center">Điểm {renderSortIcon('gift_points')}</div></th>
-                  <th className="p-4 text-center cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('current_stock')}><div className="flex items-center justify-center">Tồn kho {renderSortIcon('current_stock')}</div></th>
+                  <th className="p-4 cursor-pointer" onClick={() => handleSort('sku')}>Mã SP {renderSortIcon('sku')}</th>
+                  <th className="p-4 cursor-pointer" onClick={() => handleSort('name')}>Tên sản phẩm {renderSortIcon('name')}</th>
+                  <th className="p-4">Nhãn hàng</th>
+                  <th className="p-4">Đơn vị</th>
+                  <th className="p-4 text-right">Giá bán</th>
+                  <th className="p-4 text-center">Tồn kho</th>
                   <th className="p-4 text-center w-32">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {!loading && products.length === 0 ? (
-                  <tr><td colSpan="9" className="p-8 text-center text-gray-500">Không tìm thấy sản phẩm.</td></tr>
-                ) : (
-                  products.map((p) => {
-                    const minStock = p.min_stock || 10;
-                    const badgeClass = getStockBadgeColor(p.current_stock, minStock);
-                    return (
-                      <tr key={p._id} className="hover:bg-gray-100 transition-colors cursor-pointer group" onClick={() => handleRowClick(p)}>
-                        <td className="p-4 text-gray-800 font-Arial text-sm">{p.sku || '---'}</td>
-                        <td className="p-4 font-medium text-gray-800">{p.name}</td>
-                        <td className="p-4 text-gray-800">
-                          {p.brand ? (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
-                              <Tag size={12} className="mr-1" /> {p.brand}
-                            </span>
-                          ) : (
-                            <span className="text-gray-400 text-xs italic">-</span>
-                          )}
-                        </td>
-                        <td className="p-4 text-gray-800">{p.unit || '-'}</td>
-                        <td className="p-4 text-right text-gray-800">{p.import_price?.toLocaleString()}₫</td>
-                        <td className="p-4 text-right text-gray-800">{p.export_price?.toLocaleString()}₫</td>
-                        <td className="p-4 text-center text-gray-800"><span className="px-2 py-1">{p.gift_points}</span></td>
-                        <td className="p-4 text-center"><div className={`block w-[40px] h-8 leading-8 text-center mx-auto rounded-full text-sm font-bold shadow-sm ${badgeClass}`}>{p.current_stock}</div></td>
-                        <td className="p-4 text-center flex justify-center gap-1">
-                          <button onClick={(e) => handleViewHistory(e, p)} className="p-2 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-full transition-all" title="Xem thẻ kho"><Clock size={18} /></button>
-                          <button onClick={(e) => handleDeleteProduct(e, p._id, p.name)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-all" title="Xóa"><Trash2 size={18} /></button>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
+                {products.length === 0 ? <tr><td colSpan="7" className="p-8 text-center text-gray-500">Không có dữ liệu.</td></tr> : products.map((p) => (
+                  <tr key={p._id} className="hover:bg-gray-100 cursor-pointer" onClick={() => handleRowClick(p)}>
+                    <td className="p-4 text-sm font-mono">{p.sku || '---'}</td>
+                    <td className="p-4 font-medium">{p.name}</td>
+                    <td className="p-4"><span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full text-xs border">{p.brand || '-'}</span></td>
+                    <td className="p-4">{p.unit}</td>
+                    <td className="p-4 text-right">{p.export_price?.toLocaleString()}₫</td>
+                    <td className="p-4 text-center"><div className={`w-10 h-8 flex items-center justify-center mx-auto rounded-full font-bold text-sm ${getStockBadgeColor(p.current_stock, p.min_stock)}`}>{p.current_stock}</div></td>
+                    <td className="p-4 text-center flex justify-center gap-1">
+                      <button onClick={(e) => handleViewHistory(e, p)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-full transition-all" title="Xem thẻ kho"><Clock size={18} /></button>
+                      <button onClick={(e) => handleDeleteProduct(e, p._id, p.name)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-all"><Trash2 size={18} /></button>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
 
-          {/* PHÂN TRANG */}
           {totalItems > 0 && (
             <div className="flex items-center justify-between px-4 py-3 border-t">
-              <div className="text-sm text-gray-500">
-                Hiển thị {((currentPage - 1) * itemsPerPage) + 1}-{Math.min(currentPage * itemsPerPage, totalItems)} trong số {totalItems} sản phẩm
-              </div>
-              
+              <div className="text-sm text-gray-500">Hiển thị {((currentPage-1)*itemsPerPage)+1}-{Math.min(currentPage*itemsPerPage, totalItems)} / {totalItems}</div>
               <div className="flex items-center gap-2">
-                <select 
-                  className="border border-gray-300 rounded-md text-sm px-2 py-1 focus:ring-1 focus:ring-blue-500 outline-none cursor-pointer bg-white"
-                  value={itemsPerPage}
-                  onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
-                >
-                  <option value="10">10 dòng</option>
-                  <option value="20">20 dòng</option>
-                  <option value="50">50 dòng</option>
-                  <option value="100">100 dòng</option>
+                <select className="border rounded text-sm px-2 py-1" value={itemsPerPage} onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}>
+                  {[10, 20, 50, 100].map(v => <option key={v} value={v}>{v} dòng</option>)}
                 </select>
-
-                <button onClick={() => paginate(currentPage - 1)} disabled={currentPage === 1} className={`p-1 rounded-md border ${currentPage === 1 ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50 cursor-pointer'}`}>
-                  <ChevronLeft size={20} />
-                </button>
-                
+                <button onClick={() => paginate(currentPage - 1)} disabled={currentPage === 1} className="p-1 disabled:opacity-30"><ChevronLeft/></button>
                 <div className="flex gap-1">
                   {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                    let pageNum = i + 1;
-                    if (totalPages > 5) {
-                        if (currentPage > 3) pageNum = currentPage - 2 + i;
-                        if (pageNum > totalPages) pageNum = totalPages - 4 + i;
-                    }
-                    
-                    return (
-                      <button key={pageNum} onClick={() => paginate(pageNum)} className={`w-8 h-8 flex items-center justify-center rounded-md text-sm font-medium transition-colors ${currentPage === pageNum ? 'bg-blue-600 text-white shadow-sm cursor-default' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 cursor-pointer'}`}>
-                        {pageNum}
-                      </button>
-                    )
+                    let p = totalPages > 5 && currentPage > 3 ? currentPage - 2 + i : i + 1;
+                    if (p > totalPages) p = totalPages - (4-i);
+                    return <button key={p} onClick={() => paginate(p)} className={`w-8 h-8 rounded text-sm ${currentPage === p ? 'bg-blue-600 text-white' : 'border'}`}>{p}</button>
                   })}
                 </div>
-
-                <button onClick={() => paginate(currentPage + 1)} disabled={currentPage === totalPages} className={`p-1 rounded-md border ${currentPage === totalPages ? 'text-gray-300 border-gray-200 cursor-not-allowed' : 'text-gray-600 border-gray-300 hover:bg-gray-50 cursor-pointer'}`}>
-                  <ChevronRight size={20} />
-                </button>
+                <button onClick={() => paginate(currentPage + 1)} disabled={currentPage === totalPages} className="p-1 disabled:opacity-30"><ChevronRight/></button>
               </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* --- MẪU BÁO CÁO --- */}
-      <div id="report-template" ref={reportRef} className="fixed top-0 left-[-9999px] w-[650px] bg-white p-10 print:static print:left-0 print:w-full z-[-50]">
-        <div className="text-center mb-6">
-          <h1 className="text-3xl font-bold uppercase mb-2 text-black">BÁO CÁO TỒN KHO</h1>
-          <p className="text-sm text-gray-600 italic">{getCurrentDateTime()}</p>
-        </div>
+      {/* --- MẪU BÁO CÁO (ẨN) --- */}
+      <div id="report-template" ref={reportRef} className="fixed left-[-9999px] w-[650px] bg-white p-10">
+        <div className="text-center mb-6"><h1 className="text-2xl font-bold">BÁO CÁO TỒN KHO</h1><p className="text-sm italic">{getCurrentDateTime()}</p></div>
         <table className="w-full border-collapse border border-black text-sm">
-          <thead>
-            <tr className="bg-gray-100">
-              <th className="border border-black p-2 text-left font-bold text-black">Tên sản phẩm</th>
-              <th className="border border-black p-2 text-left font-bold text-black">Nhãn hàng</th>
-              <th className="border border-black p-2 text-center font-bold text-black w-24">Đơn vị</th>
-              <th className="border border-black p-2 text-center font-bold text-black w-16">Điểm</th>
-              <th className="border border-black p-2 text-center font-bold text-black w-20">Tồn cuối</th>
-            </tr>
-          </thead>
-          <tbody>
-            {products.map((p) => (
-              <tr key={p._id}>
-                <td className="border border-black p-2 text-left text-black">{p.name}</td>
-                <td className="border border-black p-2 text-left text-black">{p.brand || '-'}</td>
-                <td className="border border-black p-2 text-center text-black">{p.unit}</td>
-                <td className="border border-black p-2 text-center text-black">{p.gift_points || 0}</td>
-                <td className="border border-black p-2 text-center text-black font-medium">{p.current_stock}</td>
-              </tr>
-            ))}
-          </tbody>
+          <thead><tr className="bg-gray-100"><th className="border border-black p-2">Tên</th><th className="border border-black p-2">ĐVT</th><th className="border border-black p-2">Tồn</th></tr></thead>
+          <tbody>{products.map(p => <tr key={p._id}><td className="border border-black p-2">{p.name}</td><td className="border border-black p-2 text-center">{p.unit}</td><td className="border border-black p-2 text-center">{p.current_stock}</td></tr>)}</tbody>
         </table>
       </div>
 
-      {/* MODAL THẺ KHO (LỊCH SỬ) */}
+      {/* MODAL THẺ KHO */}
       {showHistoryModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[80vh]">
-            <div className="flex justify-between items-center p-4 border-b">
-              <h2 className="font-bold text-gray-800">Lịch sử: {selectedProduct?.name}</h2>
-              <button onClick={handleCloseModal}><X size={20}/></button>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[80vh] overflow-hidden">
+            <div className="flex justify-between items-center p-4 border-b bg-gray-50">
+              <div><h2 className="font-bold text-gray-800 flex items-center gap-2"><Clock size={20} className="text-blue-600"/> Thẻ Kho</h2><p className="text-xs text-gray-500">{selectedProduct?.name}</p></div>
+              <button onClick={handleCloseModal} className="p-1 hover:bg-gray-200 rounded-full transition-colors"><X size={24}/></button>
             </div>
-            
             <div className="flex-1 overflow-y-auto">
+              {loadingHistory ? <div className="p-10 text-center animate-pulse">Đang tải lịch sử...</div> : 
               <table className="w-full text-sm">
-                <thead className="bg-gray-50 sticky top-0">
-                  <tr>
-                    <th className="p-3 text-left">Ngày</th>
-                    <th className="p-3 text-left">Thao tác</th>
-                    <th className="p-3 text-left">Mã phiếu</th>
-                    <th className="p-3 text-right">Đầu</th>
-                    <th className="p-3 text-right">Biến động</th>
-                    <th className="p-3 text-right">Cuối</th>
-                  </tr>
+                <thead className="bg-white sticky top-0 border-b">
+                  <tr><th className="p-3 text-left">Ngày</th><th className="p-3 text-left">Thao tác</th><th className="p-3 text-left">Mã phiếu</th><th className="p-3 text-right">Đầu</th><th className="p-3 text-right">Biến động</th><th className="p-3 text-right">Cuối</th></tr>
                 </thead>
-                <tbody>
-                  {Array.isArray(historyData) && historyData.length > 0 ? (
-                    historyData.map(item => (
-                      <tr key={item._id} className="border-b">
-                        <td className="p-3 text-gray-600">{new Date(item.createdAt).toLocaleDateString('vi-VN')}</td>
-                        <td className="p-3 font-medium">{getHistoryTypeLabel(item.type)}</td>
-                        <td className="p-3 font-mono text-blue-600">{item.reference_code}</td>
-                        <td className="p-3 text-right text-gray-500">{item.previous_stock}</td>
-                        <td className={`p-3 text-right font-bold ${item.change_quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {item.change_quantity > 0 ? '+' : ''}{item.change_quantity}
-                        </td>
-                        <td className="p-3 text-right font-bold">{item.new_stock}</td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan="6" className="p-4 text-center text-gray-400">Không có dữ liệu lịch sử</td>
+                <tbody className="divide-y">
+                  {Array.isArray(historyData) && historyData.length > 0 ? historyData.map(item => (
+                    <tr key={item._id} className="hover:bg-gray-50">
+                      <td className="p-3 text-gray-600 text-xs">{new Date(item.createdAt).toLocaleString('vi-VN')}</td>
+                      <td className="p-3">{getHistoryTypeLabel(item.type)}</td>
+                      <td className="p-3 font-mono text-blue-600 text-xs">{item.reference_code || '---'}</td>
+                      <td className="p-3 text-right text-gray-400">{item.previous_stock}</td>
+                      <td className={`p-3 text-right font-bold ${item.change_quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>{item.change_quantity > 0 ? `+${item.change_quantity}` : item.change_quantity}</td>
+                      <td className="p-3 text-right font-bold bg-blue-50/30">{item.new_stock}</td>
                     </tr>
-                  )}
+                  )) : <tr><td colSpan="6" className="p-10 text-center text-gray-400 italic">Không có dữ liệu biến động.</td></tr>}
                 </tbody>
-              </table>
+              </table>}
             </div>
-            
-            {/* Phân trang modal */}
-            <div className="p-3 border-t flex justify-center gap-2">
-              {/* Thêm logic nút trang ở đây nếu cần */}
-            </div>
+            <div className="p-3 border-t bg-gray-50 text-center text-xs text-gray-500">Hiển thị lịch sử biến động kho gần nhất.</div>
           </div>
         </div>
       )}
 
-      {/* MODAL FORM THÊM/SỬA SẢN PHẨM */}
+      {/* MODAL FORM THÊM/SỬA */}
       {showModal && !showHistoryModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 backdrop-blur-sm">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 backdrop-blur-sm p-4">
            <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl p-6 transform scale-100" style={{ animation: isClosing ? 'fadeOut 0.1s ease-out forwards' : 'fadeIn 0.1s ease-out forwards' }}>
             <div className="flex justify-between items-center mb-6 border-b pb-3">
-              <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                {isEditMode ? <><Pencil size={23} className="text-black-600" /> Cập nhật sản phẩm</> : <><Plus size={23} className="text-black-600" /> Thêm sản phẩm mới</>}
-              </h2>
-              <button onClick={handleCloseModal} className="text-gray-400 hover:text-red-500 transition-colors"><X size={24} /></button>
+              <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">{isEditMode ? <Pencil className="text-blue-600" /> : <Plus className="text-blue-600" />} {isEditMode ? 'Cập nhật' : 'Thêm mới'}</h2>
+              <button onClick={handleCloseModal}><X size={24} /></button>
             </div>
             <form onSubmit={handleSaveProduct}>
-              <div className="grid grid-cols-2 gap-6 mb-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
                   <div className="space-y-4">
-                    <h3 className="font-semibold text-gray-500 text-sm uppercase tracking-wider border-b pb-1">Thông tin chung</h3>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1"><Barcode size={16} /> Mã sản phẩm</label>
-                      <input type="text" className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 outline-none" placeholder="VD: SP001" value={formData.sku} onChange={(e) => setFormData({...formData, sku: e.target.value})} />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Tên sản phẩm <span className="text-red-500">*</span></label>
-                      <input type="text" className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 outline-none" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
-                    </div>
+                    <div><label className="block text-sm font-medium mb-1">Mã sản phẩm</label><input type="text" className="w-full border rounded-lg p-2.5" value={formData.sku} onChange={(e) => setFormData({...formData, sku: e.target.value})} /></div>
+                    <div><label className="block text-sm font-medium mb-1">Tên sản phẩm *</label><input type="text" className="w-full border rounded-lg p-2.5" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required /></div>
+                    <div><label className="block text-sm font-medium mb-1">Nhãn hàng</label><CreatableSelect isClearable options={Array.from(new Set(products.map(p => p.brand).filter(Boolean))).map(b => ({ value: b, label: b }))} value={formData.brand ? { label: formData.brand, value: formData.brand } : null} onChange={(s) => setFormData({ ...formData, brand: s ? s.value : '' })} styles={{ control: (b) => ({ ...b, borderRadius: '0.5rem', minHeight: '42px' }) }} /></div>
                   </div>
                   <div className="space-y-4">
-                    <h3 className="font-semibold text-gray-500 text-sm uppercase tracking-wider border-b pb-1">Giá & Chính sách</h3>
                     <div className="grid grid-cols-2 gap-4">
-                      <div><label className="block text-sm font-medium text-gray-700 mb-1">Giá nhập</label><input type="text" className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 outline-none" value={formData.import_price} onChange={(e) => handlePriceChange('import_price', e.target.value)} /></div>
-                      <div><label className="block text-sm font-medium text-gray-700 mb-1">Giá bán</label><input type="text" className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 outline-none" value={formData.export_price} onChange={(e) => handlePriceChange('export_price', e.target.value)} /></div>
+                      <div><label className="block text-sm font-medium mb-1">Giá nhập</label><input type="text" className="w-full border rounded-lg p-2.5" value={formData.import_price} onChange={(e) => handlePriceChange('import_price', e.target.value)} /></div>
+                      <div><label className="block text-sm font-medium mb-1">Giá bán</label><input type="text" className="w-full border rounded-lg p-2.5" value={formData.export_price} onChange={(e) => handlePriceChange('export_price', e.target.value)} /></div>
                     </div>
-                    <div className="grid grid-cols-1 gap-4">
-                      <div><label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1"><Gift size={16} /> Điểm</label><input type="number" className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 outline-none" value={formData.gift_points} onChange={(e) => setFormData({...formData, gift_points: e.target.value})} /></div>
+                    <div><label className="block text-sm font-medium mb-1">Điểm quà</label><input type="number" className="w-full border rounded-lg p-2.5" value={formData.gift_points} onChange={(e) => setFormData({...formData, gift_points: e.target.value})} /></div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div><label className="block text-sm font-medium mb-1">Đơn vị</label><input type="text" className="w-full border rounded-lg p-2.5" value={formData.unit} onChange={(e) => setFormData({...formData, unit: e.target.value})} /></div>
+                      <div><label className="block text-sm font-medium mb-1">Cảnh báo tồn</label><input type="number" className="w-full border rounded-lg p-2.5" value={formData.min_stock} onChange={(e) => setFormData({...formData, min_stock: e.target.value})} /></div>
                     </div>
                   </div>
               </div>
-              
-              <div className="grid grid-cols-3 gap-6 mb-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
-                  <Tag size={16} className="text-gray-500" /> Nhãn hàng
-                </label>
-                <CreatableSelect
-                  isClearable
-                  options={Array.from(new Set(products.map(p => p.brand).filter(Boolean))).map(b => ({ value: b, label: b }))}
-                  value={formData.brand ? { label: formData.brand, value: formData.brand } : null}
-                  onChange={(selected) => setFormData({ ...formData, brand: selected ? selected.value : '' })}
-                  placeholder="Chọn hoặc nhập mới..."
-                  formatCreateLabel={(inputValue) => `Tạo nhãn hàng mới: "${inputValue}"`}
-                  styles={{ control: (base) => ({ ...base, borderRadius: '0.5rem', borderColor: '#d1d5db', minHeight: '42px', fontSize: '14px' }), menu: (base) => ({ ...base, zIndex: 9999 }) }}
-                />
-              </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Đơn vị tính</label>
-                    <input type="text" className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 outline-none" value={formData.unit} onChange={(e) => setFormData({...formData, unit: e.target.value})} />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1"><AlertTriangle size={16} className="text-black-500" /> Ngưỡng cảnh báo</label>
-                    <input type="number" className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 outline-none" placeholder="VD: 5" value={formData.min_stock} onChange={(e) => setFormData({...formData, min_stock: e.target.value})} />
-                  </div>
-              </div>
-
               <div className="flex gap-3 border-t pt-4">
-                <button type="button" onClick={handleCloseModal} className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 font-medium transition-colors">Hủy bỏ</button>
-                <button type="submit" className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-md transition-colors">{isEditMode ? 'Lưu thay đổi' : 'Lưu sản phẩm'}</button>
+                <button type="button" onClick={handleCloseModal} className="flex-1 py-3 border rounded-lg font-medium">Hủy bỏ</button>
+                <button type="submit" className="flex-1 py-3 bg-blue-600 text-white rounded-lg font-medium shadow-md">Lưu dữ liệu</button>
               </div>
             </form>
           </div>
