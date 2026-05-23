@@ -186,22 +186,26 @@ export const getProductHistory = async (req, res) => {
   try {
     const { id } = req.params;
     const page = parseInt(req.query.page) || 1;
-    const limit = 10; // Chỉ lấy 10 dòng mỗi trang
+    const limit = 20; // Có thể tăng lên 20 cho dễ nhìn
     const skip = (page - 1) * limit;
 
     const history = await InventoryHistory.find({ product_id: id })
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .lean(); // Dùng lean để query nhanh hơn
 
     const total = await InventoryHistory.countDocuments({ product_id: id });
 
+    // Trả về định dạng chuẩn
     res.status(200).json({
-      data: history,
-      totalPages: Math.ceil(total / limit)
+      success: true,
+      data: history || [], // Luôn đảm bảo data là một mảng
+      totalPages: Math.ceil(total / limit) || 1,
+      totalItems: total
     });
   } catch (error) {
-    res.status(500).json({ message: 'Lỗi: ' + error.message });
+    res.status(500).json({ success: false, message: 'Lỗi: ' + error.message });
   }
 };
 

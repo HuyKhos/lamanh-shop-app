@@ -243,21 +243,22 @@ const ProductPage = () => {
     try {
       const res = await axiosClient.get(`/products/${product._id}/history`);
       
-      // Kiểm tra dữ liệu trả về:
-      // Nếu Backend trả về { data: [...] } thì ta lấy res.data.data
-      if (res && res.data && Array.isArray(res.data.data)) {
-        setHistoryData(res.data.data);
-      } 
-      // Trường hợp dự phòng nếu API không có phân trang
-      else if (res && Array.isArray(res.data)) {
+      // logic an toàn: kiểm tra xem mảng nằm ở đâu
+      if (res && res.data && Array.isArray(res.data)) {
+        // Trường hợp 1: res là object axios, data là { data: history }
+        setHistoryData(res.data.data || []);
+      } else if (res && Array.isArray(res.data)) {
+        // Trường hợp 2: res là data trực tiếp từ axiosClient, mảng nằm ở res.data
         setHistoryData(res.data);
+      } else if (Array.isArray(res)) {
+        // Trường hợp 3: res chính là mảng
+        setHistoryData(res);
       } else {
         setHistoryData([]); 
       }
     } catch (error) {
-      console.error(error);
-      toast.error('Không tải được lịch sử tồn kho');
-      setHistoryData([]);
+      console.error("Lỗi thẻ kho:", error);
+      setHistoryData([]); 
     } finally {
       setLoadingHistory(false);
     }
