@@ -185,12 +185,26 @@ const deleteProduct = async (req, res) => {
 export const getProductHistory = async (req, res) => {
   try {
     const { id } = req.params;
+    const page = parseInt(req.query.page) || 1;
+    const limit = 10; // Cố định mỗi trang 10 dòng
+    const skip = (page - 1) * limit;
+
+    // 1. Lấy dữ liệu đã phân trang
     const history = await InventoryHistory.find({ product_id: id })
       .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
       .lean();
 
-    // TRẢ VỀ MẢNG TRỰC TIẾP (Giống lúc chưa bị lỗi S.map)
-    res.status(200).json(history); 
+    // 2. Lấy tổng số dòng để tính totalPages
+    const total = await InventoryHistory.countDocuments({ product_id: id });
+    const totalPages = Math.ceil(total / limit);
+
+    // 3. Trả về cả dữ liệu và thông tin phân trang
+    res.status(200).json({
+      data: history,
+      totalPages: totalPages
+    });
   } catch (error) {
     res.status(500).json({ message: 'Lỗi: ' + error.message });
   }
