@@ -3,7 +3,6 @@ import ImportReceipt from '../models/importModel.js';
 import Product from '../models/productModel.js';
 import Partner from '../models/partnerModel.js';
 import Counter from '../models/counterModel.js';
-import InventoryHistory from '../models/inventoryHistoryModel.js'; // Đã thêm Thẻ Kho
 
 // --- 1. HÀM SINH MÃ TỰ ĐỘNG ---
 export const generateImportCode = async (session = null) => {
@@ -34,23 +33,12 @@ const createImport = async (req, res) => {
     const code = await generateImportCode(session);
 
     for (const item of details) {
-      // 1. Cập nhật tồn kho
       const updatedProduct = await Product.findByIdAndUpdate(
         item.product_id,
         { $inc: { current_stock: item.quantity } },
-        { session, new: true } // new: true để lấy ra số tồn mới nhất
+        { session, new: true }
       );
       if (!updatedProduct) throw new Error(`Sản phẩm ID ${item.product_id} lỗi.`);
-
-      // 2. GHI LỊCH SỬ THẺ KHO (Tự động tính tồn cũ từ tồn mới để đảm bảo tính Atomic)
-      await InventoryHistory.create([{
-        product_id: item.product_id,
-        type: 'IMPORT',
-        reference_code: code,
-        change_quantity: item.quantity, // Nhập kho là số Dương
-        previous_stock: updatedProduct.current_stock - item.quantity, // Tồn cũ = Tồn mới - Lượng vừa nhập
-        new_stock: updatedProduct.current_stock,
-      }], { session });
     }
 
     const importReceipt = new ImportReceipt({
@@ -80,32 +68,18 @@ const deleteImport = async (req, res) => {
   session.startTransaction();
 
   try {
-    // 1. DÙNG KỸ THUẬT XÓA NGUYÊN TỬ (Chống lỗi click đúp gây trừ tồn kho nhiều lần)
-    const receipt = await ImportReceipt.findByIdAndDelete(req.params.id).session(session);
-    if (!receipt) throw new Error('Không tìm thấy phiếu hoặc phiếu đã bị xóa');
+    const receipt = await ImportReceipt.findById(req.params.id).session(session);
+    if (!receipt) throw new Error('Không tìm thấy phiếu');
 
     for (const item of receipt.details) {
-      if (item.product_id) {
-        // Cập nhật lại tồn kho (Xóa phiếu nhập -> Trừ đi số lượng đã nhập)
-        const productAfter = await Product.findByIdAndUpdate(
-          item.product_id,
-          { $inc: { current_stock: -item.quantity } },
-          { session, new: true }
-        );
-
-        if (productAfter) {
-          // GHI LỊCH SỬ THẺ KHO KHI RÚT LẠI HÀNG
-          await InventoryHistory.create([{
-            product_id: item.product_id,
-            type: 'DELETE_IMPORT',
-            reference_code: receipt.code,
-            change_quantity: -item.quantity, // Rút lại hàng là số Âm
-            previous_stock: productAfter.current_stock + item.quantity,
-            new_stock: productAfter.current_stock,
-          }], { session });
-        }
-      }
+      await Product.findByIdAndUpdate(
+        item.product_id,
+        { $inc: { current_stock: -item.quantity } },
+        { session }
+      );
     }
+
+    await ImportReceipt.deleteOne({ _id: receipt._id }).session(session);
 
     await session.commitTransaction();
     res.json({ message: 'Đã xóa phiếu nhập và hoàn tác dữ liệu thành công.' });

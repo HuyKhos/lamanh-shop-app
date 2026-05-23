@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom'; 
 import { 
-  Plus, Search, X, Barcode, Tag, Gift, Trash2, Menu, Pencil, 
+  Plus, Search, X, Barcode, Tag, Gift, FileText, Trash2, Menu, Pencil, 
   AlertTriangle, Filter, ArrowUpDown, ArrowUp, ArrowDown,
   Download, FileSpreadsheet, Image as ImageIcon, ChevronDown, 
-  ChevronLeft, ChevronRight, Clock 
+  ChevronLeft, ChevronRight 
 } from 'lucide-react'; 
 import axiosClient from '../api/axiosClient';
 import { toast } from 'react-toastify';
@@ -24,14 +24,6 @@ const ProductPage = () => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
-
-  // --- THẺ KHO (HISTORY) STATES ---
-  const [showHistoryModal, setShowHistoryModal] = useState(false);
-  const [historyData, setHistoryData] = useState([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState(null);
-  const [historyPage, setHistoryPage] = useState(1);
-  const [historyTotalPages, setHistoryTotalPages] = useState(1);
 
   // --- STATE TÌM KIẾM, LỌC & SERVER-SIDE PAGINATION ---
   const [searchTerm, setSearchTerm] = useState('');
@@ -60,9 +52,7 @@ const ProductPage = () => {
     setIsClosing(true);
     setTimeout(() => {
       setShowModal(false);
-      setShowHistoryModal(false);
       setIsClosing(false);
-      setSelectedProduct(null);
     }, 100); 
   };
 
@@ -236,54 +226,6 @@ const ProductPage = () => {
     }
   };
 
-  // --- HÀM GỌI API LẤY LỊCH SỬ TỒN KHO ---
-  const fetchHistoryData = async (productId, page = 1) => {
-    setLoadingHistory(true);
-    try {
-      const res = await axiosClient.get(`/products/${productId}/history?page=${page}&limit=10`);
-      const actualData = res.data?.data || res.data || res || [];
-      const actualTotalPages = res.data?.totalPages || res.pagination?.totalPages || res.totalPages || 1;
-
-      setHistoryData(Array.isArray(actualData) ? actualData : []);
-      setHistoryTotalPages(actualTotalPages);
-    } catch (error) {
-      console.error("Lỗi tải thẻ kho:", error);
-      toast.error('Không tải được lịch sử tồn kho');
-      setHistoryData([]); 
-    } finally {
-      setLoadingHistory(false);
-    }
-  };
-
-  // --- HÀM MỞ THẺ KHO ---
-  const handleViewHistory = (e, product) => {
-    e.stopPropagation();
-    setSelectedProduct(product);
-    setShowHistoryModal(true);
-    setHistoryPage(1); // Reset về trang 1 khi mở sản phẩm mới
-    fetchHistoryData(product._id, 1);
-  };
-
-  // --- HÀM CHUYỂN TRANG THẺ KHO ---
-  const handleHistoryPageChange = (newPage) => {
-    if (newPage > 0 && newPage <= historyTotalPages) {
-      setHistoryPage(newPage);
-      fetchHistoryData(selectedProduct._id, newPage);
-    }
-  };
-
-  // --- FORMAT LOẠI GIAO DỊCH LỊCH SỬ ---
-  const getHistoryTypeLabel = (type) => {
-    switch (type) {
-      case 'IMPORT': return <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-semibold">Nhập kho</span>;
-      case 'EXPORT': return <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-semibold">Xuất kho</span>;
-      case 'DELETE_IMPORT': return <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-semibold">Xóa phiếu nhập</span>;
-      case 'DELETE_EXPORT': return <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs font-semibold">Khách trả hàng</span>;
-      case 'UPDATE_MANUAL': return <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs font-semibold">Sửa thủ công</span>;
-      default: return type;
-    }
-  };
-
   const handleRowClick = (product) => {
     setFormData({
       _id: product._id,
@@ -397,7 +339,7 @@ const ProductPage = () => {
                   <th className="p-4 text-right cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('export_price')}><div className="flex items-center justify-end">Giá bán {renderSortIcon('export_price')}</div></th>
                   <th className="p-4 text-center cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('gift_points')}><div className="flex items-center justify-center">Điểm {renderSortIcon('gift_points')}</div></th>
                   <th className="p-4 text-center cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleSort('current_stock')}><div className="flex items-center justify-center">Tồn kho {renderSortIcon('current_stock')}</div></th>
-                  <th className="p-4 text-center w-32">Thao tác</th>
+                  <th className="p-4 text-center w-28">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -425,10 +367,7 @@ const ProductPage = () => {
                         <td className="p-4 text-right text-gray-800">{p.export_price?.toLocaleString()}₫</td>
                         <td className="p-4 text-center text-gray-800"><span className="px-2 py-1">{p.gift_points}</span></td>
                         <td className="p-4 text-center"><div className={`block w-[40px] h-8 leading-8 text-center mx-auto rounded-full text-sm font-bold shadow-sm ${badgeClass}`}>{p.current_stock}</div></td>
-                        <td className="p-4 text-center flex justify-center gap-1">
-                          <button onClick={(e) => handleViewHistory(e, p)} className="p-2 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-full transition-all" title="Xem thẻ kho"><Clock size={18} /></button>
-                          <button onClick={(e) => handleDeleteProduct(e, p._id, p.name)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-all" title="Xóa"><Trash2 size={18} /></button>
-                        </td>
+                        <td className="p-4 text-center"><button onClick={(e) => handleDeleteProduct(e, p._id, p.name)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-all"><Trash2 size={18} /></button></td>
                       </tr>
                     );
                   })
@@ -437,7 +376,7 @@ const ProductPage = () => {
             </table>
           </div>
 
-          {/* PHÂN TRANG BAN ĐẦU */}
+          {/* PHÂN TRANG */}
           {totalItems > 0 && (
             <div className="flex items-center justify-between px-4 py-3 border-t">
               <div className="text-sm text-gray-500">
@@ -515,84 +454,8 @@ const ProductPage = () => {
         </table>
       </div>
 
-      {/* MODAL THẺ KHO (LỊCH SỬ) */}
-      {showHistoryModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl flex flex-col max-h-[85vh] overflow-hidden">
-            <div className="flex justify-between items-center p-5 border-b bg-gray-50 shrink-0">
-              <div>
-                <h2 className="font-bold text-xl text-gray-800 flex items-center gap-2">
-                  <Clock size={24} className="text-blue-600"/> Thẻ Kho
-                </h2>
-                <p className="text-xs text-blue-600 font-bold mt-1">{selectedProduct?.name}</p>
-              </div>
-              <button onClick={handleCloseModal} className="p-2 hover:bg-gray-200 rounded-full bg-white border shadow-sm"><X size={20}/></button>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto relative">
-              {loadingHistory && (
-                <div className="absolute inset-0 bg-white/70 flex justify-center items-center z-10">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                </div>
-              )}
-              <table className="w-full text-sm">
-                <thead className="bg-white sticky top-0 border-b z-10">
-                  <tr className="text-gray-500 font-bold uppercase text-[11px]">
-                    <th className="p-4 text-left">Thời gian</th>
-                    <th className="p-4 text-left">Thao tác</th>
-                    <th className="p-4 text-left">Mã phiếu</th>
-                    <th className="p-4 text-right">Đầu</th>
-                    <th className="p-4 text-right">+/-</th>
-                    <th className="p-4 text-right">Cuối</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {Array.isArray(historyData) && historyData.length > 0 ? (
-                    historyData.map(item => (
-                      <tr key={item._id} className="hover:bg-blue-50/50 transition-colors">
-                        <td className="p-4 text-gray-600 font-medium">{new Date(item.createdAt).toLocaleString('vi-VN')}</td>
-                        <td className="p-4">{getHistoryTypeLabel(item.type)}</td>
-                        <td className="p-4 font-mono text-blue-600 text-xs font-bold">{item.reference_code || '---'}</td>
-                        <td className="p-4 text-right text-gray-400 font-medium">{item.previous_stock}</td>
-                        <td className={`p-4 text-right font-black text-base ${item.change_quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {item.change_quantity > 0 ? `+${item.change_quantity}` : item.change_quantity}
-                        </td>
-                        <td className="p-4 text-right font-black bg-gray-50">{item.new_stock}</td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr><td colSpan="6" className="p-10 text-center text-gray-400 italic">Không tìm thấy dữ liệu.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            
-            {/* THANH PHÂN TRANG MODAL */}
-            <div className="p-4 border-t bg-gray-50 flex justify-between items-center shrink-0">
-              <span className="text-xs font-bold text-gray-500 uppercase">Trang {historyPage} / {historyTotalPages}</span>
-              <div className="flex items-center gap-2">
-                <button 
-                  onClick={() => loadHistoryData(selectedProduct._id, historyPage - 1)} 
-                  disabled={historyPage <= 1 || loadingHistory} 
-                  className="p-2 border bg-white rounded-lg hover:bg-gray-100 disabled:opacity-30"
-                >
-                  <ChevronLeft size={18}/>
-                </button>
-                <button 
-                  onClick={() => loadHistoryData(selectedProduct._id, historyPage + 1)} 
-                  disabled={historyPage >= historyTotalPages || loadingHistory} 
-                  className="p-2 border bg-white rounded-lg hover:bg-gray-100 disabled:opacity-30"
-                >
-                  <ChevronRight size={18}/>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL FORM THÊM/SỬA SẢN PHẨM */}
-      {showModal && !showHistoryModal && (
+      {/* MODAL FORM */}
+      {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 backdrop-blur-sm">
            <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl p-6 transform scale-100" style={{ animation: isClosing ? 'fadeOut 0.1s ease-out forwards' : 'fadeIn 0.1s ease-out forwards' }}>
             <div className="flex justify-between items-center mb-6 border-b pb-3">

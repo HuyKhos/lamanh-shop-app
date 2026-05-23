@@ -1,7 +1,6 @@
 import Product from '../models/productModel.js';
 import ImportReceipt from '../models/importModel.js';
 import ExportReceipt from '../models/exportModel.js';
-import InventoryHistory from '../models/inventoryHistoryModel.js';
 
 // @desc    Tạo sản phẩm mới
 const createProduct = async (req, res) => {
@@ -9,7 +8,7 @@ const createProduct = async (req, res) => {
     const { 
       sku, name, brand, unit,
       import_price, export_price, 
-      gift_points, min_stock // Đã xóa discount_percent
+      discount_percent, gift_points, min_stock 
     } = req.body;
 
     if (!name) {
@@ -19,7 +18,7 @@ const createProduct = async (req, res) => {
     const product = new Product({
       sku, name, brand, unit,
       import_price, export_price,
-      gift_points, min_stock // Đã xóa discount_percent
+      discount_percent, gift_points, min_stock
     });
 
     const createdProduct = await product.save();
@@ -39,7 +38,7 @@ const updateProduct = async (req, res) => {
     const { 
       sku, name, brand, unit,
       import_price, export_price, 
-      gift_points, min_stock // Đã xóa discount_percent
+      discount_percent, gift_points, min_stock
     } = req.body;
 
     const product = await Product.findById(req.params.id);
@@ -51,7 +50,7 @@ const updateProduct = async (req, res) => {
       product.unit = unit || product.unit;
       product.import_price = import_price !== undefined ? import_price : product.import_price;
       product.export_price = export_price !== undefined ? export_price : product.export_price;
-      // Đã xóa gán product.discount_percent
+      product.discount_percent = discount_percent !== undefined ? discount_percent : product.discount_percent;
       product.gift_points = gift_points !== undefined ? gift_points : product.gift_points;
       product.min_stock = min_stock !== undefined ? min_stock : product.min_stock;
 
@@ -178,35 +177,6 @@ const deleteProduct = async (req, res) => {
 
   } catch (error) {
     res.status(500).json({ message: 'Lỗi xóa: ' + error.message });
-  }
-};
-
-// --- API LẤY LỊCH SỬ THẺ KHO CỦA SẢN PHẨM ---
-export const getProductHistory = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const page = parseInt(req.query.page) || 1;
-    const limit = 10; // Cố định mỗi trang 10 dòng
-    const skip = (page - 1) * limit;
-
-    // 1. Lấy dữ liệu đã phân trang
-    const history = await InventoryHistory.find({ product_id: id })
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean();
-
-    // 2. Lấy tổng số dòng để tính totalPages
-    const total = await InventoryHistory.countDocuments({ product_id: id });
-    const totalPages = Math.ceil(total / limit);
-
-    // 3. Trả về cả dữ liệu và thông tin phân trang
-    res.status(200).json({
-      data: history,
-      totalPages: totalPages
-    });
-  } catch (error) {
-    res.status(500).json({ message: 'Lỗi: ' + error.message });
   }
 };
 
