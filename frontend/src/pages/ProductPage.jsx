@@ -242,9 +242,19 @@ const ProductPage = () => {
     setLoadingHistory(true);
     try {
       const res = await axiosClient.get(`/products/${product._id}/history`);
-      setHistoryData(res);
+      
+      // SỬA Ở ĐÂY: Nếu Backend trả về object { data: [], totalPages: 1 }
+      // Thì ta phải setHistoryData là res.data
+      if (res && Array.isArray(res.data)) {
+        setHistoryData(res.data);
+      } else if (Array.isArray(res)) {
+        setHistoryData(res);
+      } else {
+        setHistoryData([]); // Fallback nếu dữ liệu không phải mảng
+      }
     } catch (error) {
       toast.error('Không tải được lịch sử tồn kho');
+      setHistoryData([]); // Tránh lỗi map khi API lỗi
     } finally {
       setLoadingHistory(false);
     }
