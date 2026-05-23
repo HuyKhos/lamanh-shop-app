@@ -185,27 +185,18 @@ const deleteProduct = async (req, res) => {
 export const getProductHistory = async (req, res) => {
   try {
     const { id } = req.params;
-    const page = parseInt(req.query.page) || 1;
-    const limit = 20; // Có thể tăng lên 20 cho dễ nhìn
-    const skip = (page - 1) * limit;
-
+    // Tạm thời bỏ qua phân trang để kiểm tra xem có dữ liệu không
     const history = await InventoryHistory.find({ product_id: id })
       .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean(); // Dùng lean để query nhanh hơn
+      .lean();
 
-    const total = await InventoryHistory.countDocuments({ product_id: id });
-
-    // Trả về định dạng chuẩn
+    // Trả về định dạng mà Frontend dễ đọc nhất
     res.status(200).json({
       success: true,
-      data: history || [], // Luôn đảm bảo data là một mảng
-      totalPages: Math.ceil(total / limit) || 1,
-      totalItems: total
+      data: history // Đây là mảng dữ liệu
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Lỗi: ' + error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 

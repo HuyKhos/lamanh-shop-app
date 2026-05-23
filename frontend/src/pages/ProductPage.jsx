@@ -243,21 +243,17 @@ const ProductPage = () => {
     try {
       const res = await axiosClient.get(`/products/${product._id}/history`);
       
-      // logic an toàn: kiểm tra xem mảng nằm ở đâu
-      if (res && res.data && Array.isArray(res.data)) {
-        // Trường hợp 1: res là object axios, data là { data: history }
-        setHistoryData(res.data.data || []);
-      } else if (res && Array.isArray(res.data)) {
-        // Trường hợp 2: res là data trực tiếp từ axiosClient, mảng nằm ở res.data
-        setHistoryData(res.data);
-      } else if (Array.isArray(res)) {
-        // Trường hợp 3: res chính là mảng
-        setHistoryData(res);
-      } else {
-        setHistoryData([]); 
-      }
+      // BACKEND của bạn trả về: { success: true, data: [...], totalPages: X }
+      // AXIOS bọc kết quả đó trong trường .data
+      // Nên đường dẫn đúng phải là res.data (nếu axiosClient đã bóc tách) 
+      // hoặc res.data.data (nếu axiosClient chưa bóc tách)
+      
+      const actualData = res.data?.data || res.data || res || [];
+      setHistoryData(Array.isArray(actualData) ? actualData : []);
+  
     } catch (error) {
-      console.error("Lỗi thẻ kho:", error);
+      console.error("Lỗi tải thẻ kho:", error);
+      toast.error('Không tải được lịch sử tồn kho');
       setHistoryData([]); 
     } finally {
       setLoadingHistory(false);
