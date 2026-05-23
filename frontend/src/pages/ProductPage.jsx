@@ -122,6 +122,12 @@ const ProductPage = () => {
     return pages;
   };
 
+  // Hàm in ngày giờ (Vừa được thêm lại)
+  const getCurrentDateTime = () => {
+    const now = new Date();
+    return `Ngày: ${now.toLocaleTimeString('vi-VN')} ${now.toLocaleDateString('vi-VN')}`;
+  };
+
   // --- HÀM FETCH LỊCH SỬ THẺ KHO (HỖ TRỢ PHÂN TRANG) ---
   const loadHistoryData = async (productId, page) => {
     setLoadingHistory(true);
@@ -130,7 +136,7 @@ const ProductPage = () => {
       
       // Bóc tách dữ liệu từ API Backend
       const payload = res.data || res;
-      const actualData = payload.data || payload; // Mảng lịch sử
+      const actualData = payload.data || payload; 
       
       setHistoryData(Array.isArray(actualData) ? actualData : []);
       setHistoryTotalPages(payload.totalPages || 1);
@@ -147,7 +153,18 @@ const ProductPage = () => {
     e.stopPropagation();
     setSelectedProduct(product);
     setShowHistoryModal(true);
-    await loadHistoryData(product._id, 1); // Mặc định mở trang 1
+    await loadHistoryData(product._id, 1); 
+  };
+
+  const getHistoryTypeLabel = (type) => {
+    switch (type) {
+      case 'IMPORT': return <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-semibold">Nhập kho</span>;
+      case 'EXPORT': return <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-semibold">Xuất bán</span>;
+      case 'DELETE_IMPORT': 
+      case 'DELETE_EXPORT': return <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-semibold">Xóa phiếu</span>;
+      case 'UPDATE_MANUAL': return <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs font-semibold">Sửa thủ công</span>;
+      default: return type;
+    }
   };
 
   const handlePriceChange = (field, value) => {
@@ -284,9 +301,9 @@ const ProductPage = () => {
 
       {/* --- MẪU BÁO CÁO (ẨN) --- */}
       <div id="report-template" ref={reportRef} className="fixed left-[-9999px] w-[800px] bg-white p-10">
-        <div className="text-center mb-8"><h1 className="text-3xl font-bold text-black">BÁO CÁO TỒN KHO</h1><p className="text-sm italic text-gray-600">{getCurrentDateTime()}</p></div>
-        <table className="w-full border-collapse border border-black text-sm">
-          <thead><tr className="bg-gray-200"><th className="border border-black p-3 font-bold">Tên sản phẩm</th><th className="border border-black p-3 font-bold">Nhãn hàng</th><th className="border border-black p-3 font-bold">ĐVT</th><th className="border border-black p-3 font-bold">Tồn cuối</th></tr></thead>
+        <div className="text-center mb-8"><h1 className="text-3xl font-bold uppercase tracking-widest text-black">BÁO CÁO TỒN KHO NPP LÂM ANH</h1><p className="text-sm italic text-gray-600 mt-2">{getCurrentDateTime()}</p></div>
+        <table className="w-full border-collapse border-2 border-black text-sm">
+          <thead><tr className="bg-gray-200"><th className="border-2 border-black p-3 font-bold">Tên sản phẩm</th><th className="border-2 border-black p-3 font-bold">Nhãn hàng</th><th className="border-2 border-black p-3 font-bold">ĐVT</th><th className="border-2 border-black p-3 font-bold">Tồn cuối</th></tr></thead>
           <tbody>{products.map(p => <tr key={p._id}><td className="border border-black p-3 font-medium">{p.name}</td><td className="border border-black p-3">{p.brand || '-'}</td><td className="border border-black p-3 text-center">{p.unit}</td><td className="border border-black p-3 text-center font-bold">{p.current_stock}</td></tr>)}</tbody>
         </table>
       </div>
@@ -294,7 +311,7 @@ const ProductPage = () => {
       {/* MODAL THẺ KHO KÈM PHÂN TRANG */}
       {showHistoryModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl flex flex-col max-h-[85vh] overflow-hidden" style={{ animation: 'fadeIn 0.2s' }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col max-h-[85vh] overflow-hidden" style={{ animation: 'fadeIn 0.2s' }}>
             <div className="flex justify-between items-center p-5 border-b bg-gray-50">
               <div>
                 <h2 className="font-bold text-xl text-gray-800 flex items-center gap-2"><Clock size={24} className="text-blue-600"/> Lịch sử: {selectedProduct?.name}</h2>
@@ -314,11 +331,7 @@ const ProductPage = () => {
                   {historyData.map(item => (
                     <tr key={item._id} className="hover:bg-blue-50/50">
                       <td className="p-4 text-gray-600 font-medium">{new Date(item.createdAt).toLocaleString('vi-VN')}</td>
-                      <td className="p-4">
-                        {item.type === 'IMPORT' ? <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-semibold">Nhập kho</span> : 
-                         item.type === 'EXPORT' ? <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-semibold">Xuất bán</span> : 
-                         <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-semibold">Xóa phiếu</span>}
-                      </td>
+                      <td className="p-4">{getHistoryTypeLabel(item.type)}</td>
                       <td className="p-4 font-mono text-blue-600 text-xs">{item.reference_code || '---'}</td>
                       <td className="p-4 text-right text-gray-400 font-medium">{item.previous_stock}</td>
                       <td className={`p-4 text-right font-black text-base ${item.change_quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>{item.change_quantity > 0 ? `+${item.change_quantity}` : item.change_quantity}</td>
@@ -385,7 +398,7 @@ const ProductPage = () => {
                 </div>
               </div>
               <div className="col-span-full flex gap-3 border-t pt-4">
-                <button type="button" onClick={handleCloseModal} className="flex-1 py-2 border rounded-lg hover:bg-gray-50">Hủy</button>
+                <button type="button" onClick={handleCloseModal} className="flex-1 py-2 border rounded-lg">Hủy</button>
                 <button type="submit" className="flex-1 py-2 bg-blue-600 text-white rounded-lg font-bold">Lưu dữ liệu</button>
               </div>
             </form>
