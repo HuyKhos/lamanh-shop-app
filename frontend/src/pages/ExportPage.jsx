@@ -444,8 +444,19 @@ const ExportPage = () => {
     try { 
         setIsSubmitting(true); 
         
+        // Đảm bảo tính toán lại tổng tiền từ state newExport.details mới nhất
+        const finalDetails = newExport.details.map(d => ({
+          ...d,
+          // Đảm bảo các giá trị là số
+          quantity: Number(d.quantity),
+          export_price: Number(d.export_price),
+          gift_points: Number(d.gift_points || 0),
+          total: Math.round(Number(d.quantity) * Number(d.export_price) * (1 - (d.discount || 0) / 100))
+        }));
+        
         const payload = { 
             ...newExport, 
+            details: finalDetails,
             total_amount: calculateTotalAmount(),
             idempotency_key: idempotencyKey
         };
@@ -662,28 +673,30 @@ const ExportPage = () => {
 
   const updateDetail = (index, field, value) => {
     const updatedDetails = [...newExport.details];
-    const val = value === '' ? '' : Number(value);
+    let val = value === '' ? '' : Number(value);
 
+    // 1. KIỂM TRA TỒN KHO (Chỉ chạy khi sửa Số Lượng)
     if (field === 'quantity') {
       const product = products.find(p => p._id === updatedDetails[index].product_id);
+      
       if (!isViewMode && product && val !== '' && val > product.current_stock) {
         toast.error(`Quá tồn kho! Tối đa: ${product.current_stock}`);
-        updatedDetails[index][field] = product.current_stock;
-        
-        updatedDetails[index].total = calculateLineTotal(product.current_stock, updatedDetails[index].export_price, updatedDetails[index].discount || 0);
-        setNewExport({ ...newExport, details: updatedDetails });
-        return; 
+        val = product.current_stock; // Tự động ép số lượng về mức tồn kho tối đa
       }
     }
 
+    // 2. CẬP NHẬT FIELD (Gán giá trị mới vào mảng)
     updatedDetails[index][field] = val;
 
-    const qty = field === 'quantity' ? (val === '' ? 0 : val) : (updatedDetails[index].quantity === '' ? 0 : updatedDetails[index].quantity);
-    const price = field === 'export_price' ? (val === '' ? 0 : val) : (updatedDetails[index].export_price === '' ? 0 : updatedDetails[index].export_price);
+    // 3. TÍNH LẠI THÀNH TIỀN CHO DÒNG ĐÓ
+    // Bất kể bạn sửa Số lượng hay Giá bán, Thành tiền đều phải được cập nhật lại
+    const qty = updatedDetails[index].quantity === '' ? 0 : Number(updatedDetails[index].quantity);
+    const price = updatedDetails[index].export_price === '' ? 0 : Number(updatedDetails[index].export_price);
     const discount = updatedDetails[index].discount || 0;
 
     updatedDetails[index].total = calculateLineTotal(qty, price, discount);
 
+    // 4. CHỐT LƯU VÀO STATE
     setNewExport({ ...newExport, details: updatedDetails });
   };
 
