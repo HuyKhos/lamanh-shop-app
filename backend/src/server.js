@@ -23,40 +23,50 @@ app.use(express.json());
 // Ví dụ: app.use(cors({ origin: 'https://lamanh-shop.web.app' }));
 app.use(cors()); 
 
-// --- Cấu hình Keep-Alive cho Render ---
-const APP_URL = 'https://lamanh-shop-backend.onrender.com'; 
+// --- Cấu hình Keep-Alive cho Render (Chỉ chạy 8h-22h giờ Việt Nam) ---
+const APP_URL = process.env.APP_URL || 'https://lamanh-shop-backend.onrender.com'; 
 
-const keepAlive = () => {
-    https.get(APP_URL, (res) => {
-        if (res.statusCode === 200) {
-            console.log(`[Keep-Alive] Ping thành công lúc: ${new Date().toLocaleTimeString()}`);
-        } else {
-            console.error(`[Keep-Alive] Ping thất bại với status: ${res.statusCode}`);
-        }
-    }).on('error', (e) => {
-        console.error(`[Keep-Alive] Lỗi khi ping: ${e.message}`);
-    });
-};
+if (process.env.NODE_ENV === 'production') {
+  const keepAlive = () => {
+      // Lấy giờ hiện tại theo múi giờ Việt Nam (UTC+7)
+      const nowVN = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
+      const hourVN = nowVN.getHours();
 
-// Ping mỗi 10 phút
-setInterval(keepAlive, 600000); 
+      // Chỉ ping trong khoảng 8h sáng - 22h tối (giờ VN)
+      if (hourVN < 8 || hourVN >= 22) {
+          console.log(`[Keep-Alive] Bỏ qua ping - ngoài giờ hoạt động (${hourVN}h giờ VN)`);
+          return;
+      }
+
+      https.get(APP_URL, (res) => {
+          if (res.statusCode === 200) {
+              console.log(`[Keep-Alive] Ping thành công lúc: ${nowVN.toLocaleTimeString('vi-VN')} (giờ VN)`);
+          } else {
+              console.error(`[Keep-Alive] Ping thất bại với status: ${res.statusCode}`);
+          }
+      }).on('error', (e) => {
+          console.error(`[Keep-Alive] Lỗi khi ping: ${e.message}`);
+      });
+  };
+  setInterval(keepAlive, 600000); 
+}
 // --------------------------------------
 
 // Đăng ký API Routes
 app.use('/api/products', productRoutes);
 app.use('/api/imports', importRoutes);
-app.use('/api/exports', exportRoutes); // [cite: 1, 2, 3]
+app.use('/api/exports', exportRoutes);
 app.use('/api/partners', partnerRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
 // --- ROUTE TRANG CHỦ CỦA BACKEND ---
-// Khi bạn truy cập link Render, nó sẽ hiện dòng này để biết Server còn sống
-// Server KHÔNG phục vụ file index.html của React nữa
 app.get('/', (req, res) => {
-    res.send('<h1>API Server is running...</h1><p>Please access the website via Firebase URL.</p>');
+    res.send('<h1>API Server is running...</h1>');
 });
 
 const PORT = process.env.PORT || 5001;
-app.listen(PORT, () => {
-  console.log(`Server đang chạy ở chế độ ${process.env.NODE_ENV} trên cổng ${PORT}`);
+const HOST = '0.0.0.0';
+
+app.listen(PORT, HOST, () => {
+  console.log(`Server đang chạy trên http://${HOST}:${PORT} (Cổng ${PORT})`);
 });
